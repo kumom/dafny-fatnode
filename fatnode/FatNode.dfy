@@ -40,45 +40,46 @@
 //   // }
 // }
 
+datatype VersionedNode = VersionedNode(timeStamp: int, node: Node?)
+datatype VersionedValue = VersionedValue(timeStamp: int, value: int)
+
 
 class Node {
   ghost var Repr: set<Node>
 
-  var lefts: seq<(int, Node?)>
-  var rights: seq<(int, Node?)>
-  var values: seq<(int, int)>
+  var lefts: seq<VersionedNode>
+  var rights: seq<VersionedNode>
+  var values: seq<VersionedValue>
 
   predicate Valid()
     reads this, Repr
   {
     |values| > 0 &&
     this in Repr &&
-    (forall l :: l in lefts && l.1 != null ==> 
-      l.1 in Repr && l.1.Repr < Repr && this !in l.1.Repr && l.1.Valid()) &&
-    (forall r :: r in rights && r.1 != null ==> 
-      r.1 in Repr && r.1.Repr < Repr && this !in r.1.Repr && r.1.Valid()) &&
-    (forall r, l :: r in rights && l in lefts && r.1 != null && l.1 != null ==>
-      l.1 != r.1 && l.1.Repr !! r.1.Repr) && // needed to add l.0 != r.0 
-    // (forall i, j :: 0 <= i < j < |lefts| ==> lefts[i].0 < lefts[j].0) &&
-    // (forall i, j :: 0 <= i < j < |rights| ==> rights[i].0 < rights[j].0) &&
-    // (forall i, j :: 0 <= i < j < |values| ==> values[i].0 < values[j].0) 
+    (forall l <- lefts | l.node != null ::
+      l.node in Repr && l.node.Repr < Repr && this !in l.node.Repr && l.node.Valid()) &&
+    (forall r <- rights | r.node != null :: 
+      r.node in Repr && r.node.Repr < Repr && this !in r.node.Repr && r.node.Valid()) &&
+    (forall r <- rights, l <- lefts | r.node != null && l.node != null && l.node != r.node :: 
+      l.node.Repr !! r.node.Repr) && // needed to add l.timeStamp != r.timeStamp 
+    // (forall i, j :: 0 <= i < j < |lefts| ==> lefts[i].timeStamp < lefts[j].timeStamp) &&
+    // (forall i, j :: 0 <= i < j < |rights| ==> rights[i].timeStamp < rights[j].timeStamp) &&
+    // (forall i, j :: 0 <= i < j < |values| ==> values[i].timeStamp < values[j].timeStamp) 
     // COMMENT: The following does not hold due to the delete method
-    (forall r1, r2 :: r1 in rights && r2 in rights && r1.1 != null && r2.1 != null  ==>
-      r1 != r2 ==> r1.1.Repr !! r2.1.Repr) &&
-    (forall l1, l2 :: l1 in lefts && l2 in lefts && l1.1 != null && l2.1 != null ==>
-      l1 != l2 ==> l1.1.Repr !! l2.1.Repr)
+    (forall r1 <- rights, r2 <- rights | r1.node != null && r2.node != null && r1 != r2 :: r1.node.Repr !! r2.node.Repr) &&
+    (forall l1 <- lefts, l2 <- lefts | l1.node != null && l2.node != null && l1 != l2 :: l1.node.Repr !! l2.node.Repr)
   } 
 
   constructor Init(time: int, value: int)
     ensures Valid() && fresh(Repr)
-    ensures lefts == []
-    ensures rights == []
+    // ensures lefts == []
+    // ensures rights == []
     ensures Repr == {this}
-    ensures values == [(time, value)]
+    // ensures values == [VersionedValue(time, value)]
   {
     lefts := [];
     rights := [];
-    values := [(time, value)];
+    values := [VersionedValue(time, value)];
     Repr := {this};
   }
 
@@ -89,7 +90,7 @@ class Node {
     ensures l != null ==> l.Valid()
   {
     if |lefts| > 0 then
-      lefts[|lefts| - 1].1
+      lefts[|lefts| - 1].node
     else
       null
   }
@@ -100,7 +101,7 @@ class Node {
     ensures r != null ==> r.Valid()
   {
     if |rights| > 0 then
-      rights[|rights| - 1].1
+      rights[|rights| - 1].node
     else
       null
   }
@@ -109,17 +110,17 @@ class Node {
     reads Repr 
     requires Valid()
   {
-    values[|values| - 1].1
+    values[|values| - 1].value
   }
 
-  function method ValueVersions(s: seq<(int, int)>): seq<int>
+  function method ValueVersions(s: seq<VersionedValue>): seq<int>
   {
-    seq(|s|, i requires 0 <= i < |s| => s[i].0)
+    seq(|s|, i requires 0 <= i < |s| => s[i].timeStamp)
   }
 
-  function method NodeVersions(s: seq<(int, Node?)>): seq<int>
+  function method NodeVersions(s: seq<VersionedNode>): seq<int>
   {
-    seq(|s|, i requires 0 <= i < |s| => s[i].0)
+    seq(|s|, i requires 0 <= i < |s| => s[i].timeStamp)
   }
 
   function method BinarySearch(v: int, s: seq<int>, lo: int, hi: int): (index: int)
@@ -149,7 +150,7 @@ class Node {
     if i == -1 then
       (false, -1)
     else
-      (true, values[i].1)
+      (true, values[i].value)
   }
 
   function method FindNode(version: int, left: bool): Node?
@@ -161,13 +162,13 @@ class Node {
       if i == -1 then
         null
       else
-        lefts[i].1
+        lefts[i].node
     else
       var i := BinarySearch(version, NodeVersions(rights), 0, |rights| - 1);
       if i == -1 then
         null
       else
-        rights[i].1
+        rights[i].node
   }
 
   function method Find(version: int, value: int): bool
@@ -214,7 +215,7 @@ class Node {
       var r := Right();
       if r == null {
         node := new Node.Init(time, value);
-        rights := rights + [(time, node)];
+        rights := rights + [VersionedNode(time, node)];
         Repr := Repr + node.Repr;
       } else {
         node := r.Insert(time, value);
@@ -226,7 +227,7 @@ class Node {
       var l := Left();
       if l == null {
         node := new Node.Init(time, value);
-        lefts := lefts + [(time, node)];
+        lefts := lefts + [VersionedNode(time, node)];
         Repr := Repr + node.Repr;
       } else {
         node := l.Insert(time, value);
