@@ -60,13 +60,13 @@ class Node {
       l.node in Repr && l.node.Repr < Repr && this !in l.node.Repr && l.node.Valid()) &&
     (forall r <- rights | r.node != null :: 
       r.node in Repr && r.node.Repr < Repr && this !in r.node.Repr && r.node.Valid()) &&
-    (forall r <- rights, l <- lefts | r.node != null && l.node != null && l.node != r.node :: 
-      l.node.Repr !! r.node.Repr) && // needed to add l.timeStamp != r.timeStamp 
+    (forall r <- rights, l <- lefts | r.node != null && l.node != null :: 
+      l.node != r.node && l.node.Repr !! r.node.Repr) && // needed to add l.timeStamp != r.timeStamp 
     // (forall i, j :: 0 <= i < j < |lefts| ==> lefts[i].timeStamp < lefts[j].timeStamp) &&
     // (forall i, j :: 0 <= i < j < |rights| ==> rights[i].timeStamp < rights[j].timeStamp) &&
     // (forall i, j :: 0 <= i < j < |values| ==> values[i].timeStamp < values[j].timeStamp) 
     // COMMENT: The following does not hold due to the delete method
-    (forall r1 <- rights, r2 <- rights | r1.node != null && r2.node != null && r1 != r2 :: r1.node.Repr !! r2.node.Repr) &&
+    // (forall r1 <- rights, r2 <- rights | r1.node != null && r2.node != null && r1 != r2 :: r1.node.Repr !! r2.node.Repr) &&
     (forall l1 <- lefts, l2 <- lefts | l1.node != null && l2.node != null && l1 != l2 :: l1.node.Repr !! l2.node.Repr)
   } 
 
@@ -219,6 +219,7 @@ class Node {
         Repr := Repr + node.Repr;
       } else {
         node := r.Insert(time, value);
+        assert (forall r <- rights | r.node != null :: r.node in Repr && r.node.Repr < Repr && this !in r.node.Repr && r.node.Valid());
         if (node != null) {
           Repr := Repr + node.Repr;
         } 
@@ -232,8 +233,16 @@ class Node {
       } else {
         node := l.Insert(time, value);
         if (node != null) {
+          // observe the following statement when changing from 
+          //  (forall r <- rights, l <- lefts | r.node != null && l.node != null :: 
+          //    l.node != r.node && l.node.Repr !! r.node.Repr)
+          //  to
+          // (forall r <- rights, l <- lefts | r.node != null && l.node != null && l.node != r.node :: 
+          //    l.node.Repr !! r.node.Repr)
+          assert (forall r <- rights | r.node != null :: r.node !in l.Repr);  
+          assert (forall r <- rights | r.node != null :: r.node in Repr && r.node.Repr < Repr && this !in r.node.Repr && r.node.Valid());
           Repr := Repr + node.Repr;
-        }
+        } 
       }
     } else {
       node := null;
