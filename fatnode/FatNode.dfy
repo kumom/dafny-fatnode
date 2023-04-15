@@ -1,5 +1,6 @@
 // class Entry {
 //   ghost var Repr: set<Node>
+//   ghost var ValueSets: seq<(int, set<int>)> 
 
 //   var roots: seq<Node?>
 //   var time: int
@@ -42,45 +43,78 @@
 
 class Node {
   ghost var Repr: set<Node>
-  ghost var Values: seq<(int, set<int>)> 
+  ghost var ValueSets: seq<(int, set<int>)> 
 
   var created: int
   var removed: int
   var value: int
   var lefts: seq<(int, Node?)>
   var rights: seq<(int, Node?)>
-  var values: seq<(int, int)>
+  var data: seq<(int, int)>
 
   // Consistently use A && B ==> C when I wrote A ==> B ==> C
-  predicate Valid()
+  ghost predicate Valid()
     reads this, Repr
+    ensures Valid() ==> this in Repr
   {
-    created >= 0 &&
-    removed >= -1 &&
-    |values| > 0 && 
-    values[0].0 == created &&
-    this in Repr &&
-    (forall l <- lefts | l.1 != null ::
-      l.1 in Repr && this !in l.1.Repr && l.1.Repr < Repr && l.1.Valid()) && 
-    (forall r <- rights | r.1 != null ::
-      r.1 in Repr && this !in r.1.Repr && r.1.Repr < Repr &&r.1.Valid()) && 
-    (forall r <- rights, l <- lefts | r.1 != null && l.1 != null :: 
-      l.1 != r.1 && l.1.Repr !! r.1.Repr && l.0 != r.0) &&
-    (forall i, j | 0 <= i < j < |lefts| :: created < lefts[i].0 < lefts[j].0) &&
-    (forall i, j | 0 <= i < j < |rights| :: created < rights[i].0 < rights[j].0) &&
-    (forall i, j | 0 <= i < j < |values| :: created < values[i].0 < values[j].0) &&
-    (forall timedV <- Values, v <- Repr :: 
-      created <= timedV.0 && (removed == -1 || timedV.0 <= removed) &&
-      (forall child_timedV <- v.Values :: 
-      removed == -1 && child_timedV.0 <= timedV.0 ==> 
-        child_timedV.1 <= timedV.1)) &&
-    (forall v <- values, timedV <- Values :: 
-      v.0 <= timedV.0 ==> v.1 in timedV.1) 
+    created >= 0 
+    && (removed == -1 || removed > created) 
+    && |data| > 0 
+    && data[0].0 == created 
+    && ValueSets[0].0 == created
+    && |ValueSets[0].1| == 1
+    && this in Repr
+    && (forall l <- lefts | l.1 != null ::
+      l.1 in Repr && this !in l.1.Repr && l.1.Repr < Repr && l.1.Valid()
+      && (forall timedValueSet <- l.1.ValueSets, timedData <- data, v | v in timedValueSet.1 :: v > timedData.1)) 
+    && (forall r <- rights | r.1 != null ::
+      r.1 in Repr && this !in r.1.Repr && r.1.Repr < Repr && r.1.Valid()
+      && (forall timedValueSet <- r.1.ValueSets, timedData <- data, v | v in timedValueSet.1 :: v > timedData.1)) 
+    && (forall r <- rights, l <- lefts | r.1 != null && l.1 != null :: 
+      l.1 != r.1 && l.1.Repr !! r.1.Repr && l.0 != r.0) 
+    // timestamps are strictly increasing in all sequences
+    && (forall i, j | 0 <= i < j < |lefts| :: created < lefts[i].0 < lefts[j].0) 
+    && (forall i, j | 0 <= i < j < |rights| :: created < rights[i].0 < rights[j].0) 
+    && (forall i, j | 0 <= i < j < |data| :: created <= data[i].0 < data[j].0)
+    && (forall i, j | 0 <= i < j < |ValueSets| :: created <= ValueSets[i].0 < ValueSets[j].0) 
+    // all timestmps are larger than created
+    && (forall i | 0 <= i < |ValueSets| :: ValueSets[i].0 >= created) 
+    && (forall i | 0 <= i < |lefts| :: lefts[i].0 > created)
+    && (forall i | 0 <= i < |rights| :: rights[i].0 > created)
+    // timestamps much not violate the created and removed timestamps of each node
+    && (forall i | 0 <= i < |lefts| && lefts[i].1 != null :: 
+          lefts[i].1.created <= lefts[i].0 
+          && (lefts[i].1.removed == -1 || lefts[i].0 <= lefts[i].1.removed))
+    && (forall i | 0 <= i < |rights| && rights[i].1 != null :: 
+          rights[i].1.created <= rights[i].0 
+          && (rights[i].1.removed == -1 || rights[i].0 <= rights[i].1.removed))
+    // all timestamps are smaller than removed
+    && (removed > 0 ==>
+        && (forall i | 0 <= i < |lefts| :: lefts[i].0 <= removed) 
+        && (forall i | 0 <= i < |rights| :: rights[i].0 <= removed) 
+        && (forall i | 0 <= i < |data| :: data[i].0 <= removed)
+        && (forall i | 0 <= i < |ValueSets| :: ValueSets[i].0 <= removed)) 
+    // data and ValueSets
+    // && (forall node <- Repr, childTimedValueSet <- node.ValueSets | node != this :: 
+    //       exists timedValueSet <- ValueSets ::
+    //         childTimedValueSet.0 == timedValueSet.0 && childTimedValueSet.1 <= timedValueSet.1)
+    && (forall node <- Repr, timedData <- node.data ::
+          exists timedValueSet <- ValueSets :: 
+            timedValueSet.0 == timedData.0 && timedData.1 in timedValueSet.1)
+    && |ValueSets| >= |data|
+    // ValueSets are updated exactly when data/ValueSets of lefts/ValueSets of rights get updated
+    && (forall timedValueSet <- ValueSets ::
+        (exists timedData <- data :: timedData.0 == timedValueSet.0 && timedData.1 in timedValueSet.1) ||
+        (exists l <- lefts | l.1 != null ::
+            exists lVS <- l.1.ValueSets :: lVS.0 == timedValueSet.0 && lVS.1 <= timedValueSet.1) ||
+        (exists r <- rights | r.1 != null ::
+            exists rVS <- r.1.ValueSets :: rVS.0 == timedValueSet.0 && rVS.1 <= timedValueSet.1))
   }
 
   predicate Sorted(s: seq<int>) 
   {
-    forall i, j | 0 <= i < j < |s| :: 0 <= s[i] < s[j]
+    (forall i, j | 0 <= i < j < |s| :: 0 <= s[i] < s[j])
+    && (forall i | 0 <= i < |s| :: 0 <= s[i])
   }
 
   constructor Init(time: int, value: int)
@@ -91,21 +125,21 @@ class Node {
     ensures lefts == []
     ensures rights == []
     ensures Repr == {this}
-    ensures values == [(time, value)]
-    ensures Values == [(time, {value})]
+    ensures data == [(time, value)]
+    ensures ValueSets == [(time, {value})]
   {
     created := time;
     removed := -1;
     lefts := [];
     rights := [];
-    values := [(time, value)];
+    data := [(time, value)];
     Repr := {this};
-    Values := [(time, {value})];
+    ValueSets := [(time, {value})];
   }
 
-  function method Left(): (l: Node?)
+  function Left(): (l: Node?)
     reads Repr 
-    requires Valid()
+    requires Valid() 
     ensures Valid()
     ensures l != null ==> l.Valid()
   {
@@ -115,7 +149,7 @@ class Node {
       null
   }
 
-  function method Right(): (r: Node?)
+  function Right(): (r: Node?)
     reads Repr 
     requires Valid()
     ensures r != null ==> r.Valid()
@@ -126,158 +160,297 @@ class Node {
       null
   }
 
-  function method Value(): int
-    reads Repr 
+  function Data(): int
+    reads Repr
     requires Valid()
   {
-    values[|values| - 1].1
+    data[|data| - 1].1
   }
 
-  function method ValueVersions(): (res: seq<int>)
-    reads this, Repr
+  ghost function ValueSet(): set<int>
+    reads Repr
+    requires Valid()
+  {
+    ValueSets[|ValueSets| - 1].1
+  }
+
+  ghost function ValueSetVersions(): (res: seq<int>)
+    reads Repr
+    requires Valid()
+    ensures Valid()
+    ensures Sorted(res)
+    ensures |res| == |ValueSets|
+    ensures forall i | 0 <= i < |ValueSets| :: res[i] == ValueSets[i].0
+  { 
+    assert Valid();
+    // assert (forall i | 0 <= i < |data| :: 
+    //       exists j | i <= j < |ValueSets| :: 
+    //         ValueSets[j].0 == data[i].0 && data[i].1 in ValueSets[j].1);
+    assert (forall timedData <- data :: 
+           exists timedValueSet <- ValueSets :: 
+             timedValueSet.0 == timedData.0 && timedData.1 in timedValueSet.1);
+    seq(|ValueSets|, i requires 0 <= i < |ValueSets| 
+                    requires Valid()
+                    reads this, Repr => 
+                    ValueSets[i].0)
+  }
+
+  function DataVersions(): (res: seq<int>)
+    reads Repr
     requires Valid()
     ensures Sorted(res)
+    ensures |res| == |data|
+    ensures forall i | 0 <= i < |data| :: res[i] == data[i].0  
+    ensures forall i | i in res :: i in ValueSetVersions()
   {
-    seq(|values|, i requires 0 <= i < |values| => values[i].0)
+    seq(|data|, i requires 0 <= i < |data| 
+                    requires Valid()
+                    reads this, Repr => 
+                    data[i].0)
   }
 
-  function method LeftVersions(): (res: seq<int>)
-    reads this, Repr
+  function LeftVersions(): (res: seq<int>)
+    reads Repr
     requires Valid()
-    // ensures Sorted(res)
+    ensures Valid()
+    ensures Sorted(res)
+    ensures |res| == |lefts|
+    ensures forall i | 0 <= i < |lefts| :: res[i] == lefts[i].0
   {
-    seq(|lefts|, i requires 0 <= i < |lefts| => lefts[i].0)
+    seq(|lefts|, i requires 0 <= i < |lefts| 
+                   reads this
+                   => 
+                   lefts[i].0)
   }
 
-  function method RightsVersions(): (res: seq<int>)
-    reads this, Repr
+  function RightVersions(): (res: seq<int>)
+    reads Repr
     requires Valid()
-    // ensures Sorted(res)
+    ensures Valid()
+    ensures Sorted(res)
+    ensures |res| == |rights|
+    ensures forall i | 0 <= i < |rights| :: res[i] == rights[i].0
   {
-    seq(|rights|, i requires 0 <= i < |rights| => rights[i].0)
+    seq(|rights|, i requires 0 <= i < |rights| 
+                   reads this
+                   => 
+                   rights[i].0)
   }
 
-  function method BinarySearch(v: int, s: seq<int>, lo: int, hi: int): (index: int)
-    requires |s| - 1 >= hi
-    requires 0 <= lo <= hi + 1
+  function IndexForVersion(version: int, s: seq<int>): (index: int)
     requires Sorted(s)
-    decreases hi - lo
+    requires version >= 0
     ensures -1 <= index < |s|
+    ensures index == -1 <==> |s| == 0 || forall k :: 0 <= k < |s| ==> s[k] > version
+    ensures index >= 0 ==> forall k :: index < k < |s| ==> s[k] > version
+    ensures index >= 0 ==> |s| > 0
+    ensures index >= 0 ==> forall k :: 0 <= k <= index ==> s[k] <= version
   {
-    if |s| == 0 || v < s[0] || lo > hi then
-      -1
+    IndexForVersionHelper(version, s, 0, |s| - 1)
+  }
+
+  function IndexForVersionHelper(version: int, s: seq<int>, lo: int, hi: int): (index: int)
+    decreases hi - lo
+    requires |s| == 0 ==> lo > hi && hi == -1
+    requires 0 <= lo <= |s| 
+    requires -1 <= hi < |s|
+    requires lo <= hi + 1
+    requires Sorted(s)
+    requires version >= 0
+    requires forall k :: hi < k < |s| ==> s[k] > version
+    requires forall k :: 0 <= k < lo ==> s[k] <= version
+    ensures -1 <= index < |s|
+    ensures index == -1 <==> (|s| == 0 || forall k :: 0 <= k < |s| ==> s[k] > version)
+    ensures |s| > 0 && s[0] <= version ==> index >= 0
+    ensures version in s ==> s[index] == version
+    ensures index >= 0 ==> |s| > 0
+    ensures forall k :: 0 <= k < index ==> s[k] < version && s[k] < s[index]
+    ensures index == -1 || s[index] <= version
+    ensures forall k :: index < k < |s| ==> s[k] > version
+  {
+    if (lo > hi) then
+      assert lo <= 0 || s[lo - 1] <= version;
+      lo - 1
     else
+      assert |s| > 0;
       var mid := lo + (hi - lo) / 2;
-      var v' := s[mid];
-      if v > v' then
-        BinarySearch(v, s, mid + 1, hi)
-      else if v < v' then
-        BinarySearch(v, s, lo, mid - 1)
-      else
+      var v := s[mid];
+      if v == version then
         mid
-  }
+      else if v < version then
+        IndexForVersionHelper(version, s, mid + 1, hi)
+      else 
+        IndexForVersionHelper(version, s, lo, mid - 1)
+  } 
 
-  function method FindValue(version: int): (bool, int)
+  ghost function ValueSetAtVersion(version: int) : (res: (int, set<int>))
+    reads Repr
+    requires version >= 0
     requires Valid()
-    reads Repr 
+    ensures res.0 >= 0 ==> res in ValueSets
+    ensures res.0 <= version
+    ensures res.0 >= 0 ==> res.0 in ValueSetVersions()
+    ensures version in ValueSetVersions() <==> res.0 == version
   {
-    var i := BinarySearch(version, ValueVersions(), 0, |values| - 1);
+    var i := IndexForVersion(version, ValueSetVersions());
     if i == -1 then
-      (false, -1)
+      (-1, {})
     else
-      (true, values[i].1)
+      assert forall k :: i < k < |ValueSets| ==> ValueSets[k].0 > version;
+      assert forall k :: 0 <= k <= i ==> ValueSets[k].0 <= version;
+      ValueSets[i]
   }
 
-  // function method FindNode(version: int, left: bool): Node?
-  //   requires Valid()
-  //   reads Repr 
-  // {
-  //   if left then
-  //     var i := BinarySearch(version, NodeVersions(lefts), 0, |lefts| - 1);
-  //     if i == -1 then
-  //       null
-  //     else
-  //       lefts[i].node
-  //   else
-  //     var i := BinarySearch(version, NodeVersions(rights), 0, |rights| - 1);
-  //     if i == -1 then
-  //       null
-  //     else
-  //       rights[i].node
-  // }
+  function DataAtVersion(version: int): (res: (int, int))
+    requires Valid()
+    requires version >= 0
+    reads Repr 
+    ensures res.0 >= 0 ==> res in data
+    ensures res.0 <= version
+    ensures res.0 <= ValueSetAtVersion(version).0
+    ensures res.0 >= 0 ==> res.0 in ValueSetVersions()
+    ensures res.0 >= 0 ==> res.1 in ValueSetAtVersion(version).1
+  {
+    var i := IndexForVersion(version, DataVersions());
+    if i == -1 then
+      (-1, -1)
+    else
+      assert exists timedValueSet <- ValueSets :: 
+            timedValueSet.0 == data[i].0;
+      assert data[i].0 >= 0;
+      data[i]
+  }
+  
+  function LeftAtVersion(version: int): (res: (int, Node?))
+    requires Valid()
+    requires version >= 0
+    reads Repr 
+    ensures res.0 >= 0 && res.1 != null ==> res.1.created <= version && (res.1.removed == -1 || res.0 <= res.1.removed)
+    ensures res.0 <= version
+    ensures res.0 >= 0 ==> res in lefts
+    ensures version in LeftVersions() ==> res.0 == version
+  {
+    var i := IndexForVersion(version, LeftVersions());
+    if i == -1 then
+      (-1, null)
+    else
+      lefts[i]
+  }
 
-  // function method Find(version: int, value: int): bool
-  //   requires Valid()
-  //   reads Repr
-  // {
-  //   var (found, x) := FindValue(version);
-  //   if found then
-  //     if x > Value() then
-  //       var left := FindNode(version, true);
-  //       if left == null then
-  //         false
-  //       else
-  //         left.Find(version, value)
-  //     else if x < Value() then
-  //       var right := FindNode(version, false);
-  //       if right == null then
-  //         false
-  //       else
-  //         right.Find(version, value)
-  //     else
-  //       true
-  //   else
-  //     false
-  // }
+  function RightAtVersion(version: int): (res: (int, Node?))
+    requires Valid()
+    requires version >= 0
+    reads Repr 
+    ensures res.0 >= 0 && res.1 != null ==> res.1.created <= version && (res.1.removed == -1 || version <= res.1.removed)
+    ensures res.0 <= version
+    ensures res.0 >= 0 ==> res in rights
+    ensures version in RightVersions() ==> res.0 == version
+  {
+    var i := IndexForVersion(version, RightVersions());
+    if i == -1 then
+      (-1, null)
+    else
+      rights[i]
+  }
+
+  function Find(version: int, value: int): (found: bool)
+    requires Valid()
+    requires version >= 0
+    reads Repr
+    decreases Repr
+    // ensures found ==> value in ValueSetAtVersion(version).1
+    // ensures value in ValueSetAtVersion(version).1 ==> found
+  {
+    var (i, x) := DataAtVersion(version);
+    assert i <= version;
+    ghost var (_, r) := RightAtVersion(version);
+    ghost var (_, l) := LeftAtVersion(version);
+    // assert value in ValueSetAtVersion(version).1 <== 
+    //     (x == value 
+    //     || (r != null && value in r.ValueSetAtVersion(version).1) 
+    //     || (l != null && value in l.ValueSetAtVersion(version).1));
+    // assert i >= 0 ==> x in ValueSetAtVersion(version).1;
+    // assert i == -1 <==> x !in ValueSetAtVersion(version).1;
+    if i >= 0 then
+      if x > value then
+        var (li, left) := LeftAtVersion(version);
+        // assert r != null ==> value !in r.ValueSetAtVersion(version).1;
+        if left == null then
+          // assert value !in ValueSetAtVersion(version).1;
+          false
+        else
+          var lf := left.Find(version, value);
+          // assert value in left.ValueSetAtVersion(version).1 ==> lf;
+          lf
+      else if x < value then
+        var (ri, right) := RightAtVersion(version);
+        // assert l != null ==> value !in l.ValueSetAtVersion(version).1;
+        if right == null then
+          // assert value !in ValueSetAtVersion(version).1;
+          false
+        else
+          var rf := right.Find(version, value);
+          // assert value in right.ValueSetAtVersion(version).1 ==> rf;
+          rf
+      else
+        // assert value in ValueSetAtVersion(version).1;
+        true
+    else
+      // assert value !in ValueSetAtVersion(version).1;
+      false
+  }
 
   // method Insert(time: int, value: int) returns (node: Node?)
   //   requires Valid()
-  //   // requires time > maxTime
+  //   requires time > 0
+  //   requires removed == -1
+  //   requires time > ValueSets[|ValueSets| - 1].0
   //   modifies Repr
   //   decreases Repr
-  //   ensures |values| > 0
   //   ensures node == null ==> 
   //     Repr == old(Repr)
   //   ensures node != null ==> 
   //     fresh(node) &&
   //     node.Repr == {node} && 
-  //     // node.lefts == [] && node.rights == [] &&
-  //     Repr == old(Repr) + {node} 
-  //   // ensures 
-  //   ensures Valid()
+  //     Repr == old(Repr) + {node} &&
+  //     node.Valid()
+  //   // ensures ValueSetAtVersion(time).0 != -1
+  //   // ensures value in ValueSetAtVersion(time).1
+  //   // ensures Valid()
   // {
-  //   var x := Value();
+  //   var x := Data();
   //   if x < value {
   //     var r := Right();
   //     if r == null {
   //       node := new Node.Init(time, value);
-  //       rights := rights + [VersionedNode(time, node)];
+  //       assert node.Valid();
+  //       rights := rights + [(time, node)];
   //       Repr := Repr + node.Repr;
+  //       ValueSets := ValueSets + [(time, {x} + ValueSets[|ValueSets| - 1].1)];
   //     } else {
   //       node := r.Insert(time, value);
-  //       assert (forall r <- rights | r.node != null :: r.node in Repr && r.node.Repr < Repr && this !in r.node.Repr && r.node.Valid());
   //       if (node != null) {
+  //         assert node.Valid();
   //         Repr := Repr + node.Repr;
+  //         ValueSets := ValueSets + [(time, {x} + ValueSets[|ValueSets| - 1].1)];
   //       } 
   //     }
   //   } else if x > value {
   //     var l := Left();
   //     if l == null {
   //       node := new Node.Init(time, value);
-  //       lefts := lefts + [VersionedNode(time, node)];
+  //       assert node.Valid();
+  //       lefts := lefts + [(time, node)];
   //       Repr := Repr + node.Repr;
+  //       ValueSets := ValueSets + [(time, {x} + ValueSets[|ValueSets| - 1].1)];
   //     } else {
   //       node := l.Insert(time, value);
   //       if (node != null) {
-  //         // observe the following statement when changing from 
-  //         //  (forall r <- rights, l <- lefts | r.node != null && l.node != null :: 
-  //         //    l.node != r.node && l.node.Repr !! r.node.Repr)
-  //         //  to
-  //         // (forall r <- rights, l <- lefts | r.node != null && l.node != null && l.node != r.node :: 
-  //         //    l.node.Repr !! r.node.Repr)
-  //         assert (forall r <- rights | r.node != null :: r.node !in l.Repr);  
-  //         assert (forall r <- rights | r.node != null :: r.node in Repr && r.node.Repr < Repr && this !in r.node.Repr && r.node.Valid());
+  //         assert node.Valid();
+  //         // assert (forall r <- rights | r.1 != null :: r.1 !in l.Repr);  
+  //         // assert (forall r <- rights | r.1 != null :: r.1 in Repr && r.1.Repr < Repr && this !in r.1.Repr && r.1.Valid());
   //         Repr := Repr + node.Repr;
+  //         ValueSets := ValueSets + [(time, {x} + ValueSets[|ValueSets| - 1].1)];
   //       } 
   //     }
   //   } else {
@@ -304,7 +477,7 @@ class Node {
   //     }
   //     assert Valid();
   //     assert parent.Valid();
-  //     minV := Value();
+  //     minV := Data();
   //     assert parent.Valid();
   //     assert lefts == old(lefts);
   //   } else {
@@ -322,13 +495,13 @@ class Node {
   //   decreases Repr
   //   ensures root != null ==> root.Valid()
   // {
-  //   var x := Value();
+  //   var x := Data();
   //   var r := Right();
   //   var l := Left();
   //   if x == value {
   //     if r != null {
   //       var minV := r.DeleteMin(this, false, time);
-  //       values := values + [(time, minV)];
+  //       data := data + [(time, minV)];
   //     } else {
   //       if parent != null {
   //         if fromLeft {
