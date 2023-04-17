@@ -4,3 +4,8 @@ survey/
 background-paper-report/
 report/
 .metals/
+
+fatnode/.stainless-cache/
+
+# misc
+*.DS_Store
