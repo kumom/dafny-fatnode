@@ -143,14 +143,8 @@ class Node {
     && (forall i | index < i < |versions| :: versions[i] > version)
   }
 
-  ghost function ValueSet(): set<int>
-    reads Repr
-    requires Valid()
-  {
-    ValueSets[|ValueSets| - 1]
-  }
 
-  function IndexForVersion(version: int, versions: seq<int>): (index: int)
+  function {:opaque} IndexForVersion(version: int, versions: seq<int>): (index: int)
     requires Sorted(versions)
     requires version >= 0
     ensures -1 <= index < |versions|
@@ -162,7 +156,7 @@ class Node {
     IndexForVersionHelper(version, versions, 0, |versions| - 1)
   }
 
-  function IndexForVersionHelper(version: int, versions: seq<int>, lo: int, hi: int): (index: int)
+  function {:opaque} IndexForVersionHelper(version: int, versions: seq<int>, lo: int, hi: int): (index: int)
     decreases hi - lo
     requires |versions| == 0 ==> lo > hi && hi == -1
     requires 0 <= lo <= |versions| 
@@ -195,7 +189,7 @@ class Node {
         IndexForVersionHelper(version, versions, lo, mid - 1)
   } 
 
-  function ValueAtVersion(version: int): (res: (int, int))
+  function {:opaque} ValueAtVersion(version: int): (res: (int, int))
     requires Valid()
     requires version >= 0
     reads Repr 
