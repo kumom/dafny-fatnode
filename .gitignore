@@ -1,0 +1,15 @@
+.DS_Store
+stainless/
+survey/
+background-paper-report/
+report/
+.metals/
+
+# dependencies
+visualization/node_modules/
+
+# production
+visualization/dist/
+
+# misc
+*.DS_Store
