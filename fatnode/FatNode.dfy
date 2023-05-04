@@ -193,7 +193,7 @@ class Node {
       (-1, -1)
     else
       assert data[i].0 >= 0;
-      // COMMENT: Adding this line causes timeout.
+      // COMMENT: This line drastically changes verification time
       assert data[i].1 in ValueSetAtVersion(version).1;
       data[i]
   }
