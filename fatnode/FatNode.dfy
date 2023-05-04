@@ -124,7 +124,7 @@ class Node {
     && (forall i | index < i < |versions| :: versions[i] > version)
   }
 
-  function IndexForVersion(version: int, versions: seq<int>): (index: int)
+  function {:opaque} IndexForVersion(version: int, versions: seq<int>): (index: int)
     requires Sorted(versions)
     requires version >= 0
     ensures -1 <= index < |versions|
@@ -170,7 +170,7 @@ class Node {
         IndexForVersionHelper(version, versions, lo, mid - 1)
   } 
 
-  ghost function ValueSetsAtVersion(version: int) : (res: (int, set<int>))
+  ghost function {:opaque} ValueSetsAtVersion(version: int) : (res: (int, set<int>))
     reads Repr
     requires version >= 0
     requires Valid()
@@ -179,6 +179,8 @@ class Node {
     ensures res.0 >= 0 ==> res.0 in ValueSetsVersions
     ensures version in ValueSetsVersions <==> res.0 == version
     ensures ValueSetsVersions[0] <= version ==> res.0 >= 0
+    ensures IndexForVersion(version, valuesVersions) >= 0 ==>
+      valuesVersions[IndexForVersion(version, valuesVersions)] <= ValueSetsAtVersion(version).0
   {
     var i := IndexForVersion(version, ValueSetsVersions);
     if i == -1 then
@@ -206,8 +208,8 @@ class Node {
       assert valuesVersions[i] in ValueSetsVersions;
       assert ValueSetsAtVersion(version).0 >= 0;
       assert ValueSetsAtVersion(version).0 >= 0 ==> valuesVersions[i] <= ValueSetsAtVersion(version).0;
-      // COMMENT: uncomment this line and hit non-halting
-      // assert valuesVersions[i] <= ValueSetsAtVersion(version).0;
+      // COMMENT: this line no longer causes non-halting once making things opaque
+      assert valuesVersions[i] <= ValueSetsAtVersion(version).0;
       (valuesVersions[i], values[i])
   }
 }
