@@ -218,6 +218,34 @@ class Node {
     ensures forall i | 0 <= i < |valuesVersions| :: valuesVersions[i] >= ValueSetsVersions[i]
   {}
 
+  lemma lemma3()
+    requires Sorted(leftsVersions) && Sorted (rightsVersions) && Sorted(valuesVersions) && Sorted(ValueSetsVersions) 
+            && |ValueSetsVersions| >= |valuesVersions| + |rightsVersions| + |leftsVersions|
+    requires (forall i | 0 <= i < |valuesVersions| ::
+          exists j | i <= j < |ValueSetsVersions| ::
+            valuesVersions[i] == ValueSetsVersions[j])
+    && (forall i | 0 <= i < |leftsVersions| ::
+          exists j | i <= j < |ValueSetsVersions| ::
+            leftsVersions[i] == ValueSetsVersions[j])
+    && (forall i | 0 <= i < |rightsVersions| ::
+          exists j | i <= j < |ValueSetsVersions| ::
+            rightsVersions[i] == ValueSetsVersions[j])
+    ensures forall i | 0 <= i < |leftsVersions| :: leftsVersions[i] >= ValueSetsVersions[i]
+    ensures forall i | 0 <= i < |rightsVersions| :: rightsVersions[i] >= ValueSetsVersions[i]
+    ensures forall i | 0 <= i < |valuesVersions| :: valuesVersions[i] >= ValueSetsVersions[i]
+  {}
+
+  lemma lemma4()
+    requires Valid()
+    ensures forall i | 0 <= i < |rightsVersions| :: rightsVersions[i] >= ValueSetsVersions[i]
+  {}
+
+  // COMMENT: lemma5 and lemma4 seem to be able to be proven in a similar way, but lemma5 times out while lemma not
+  lemma lemma5()
+    requires Valid()
+    ensures forall i | 0 <= i < |leftsVersions| :: leftsVersions[i] >= ValueSetsVersions[i]
+  {}
+
   predicate Sorted(s: seq<int>) 
   {
     (forall i, j | 0 <= i < j < |s| :: 0 <= s[i] < s[j])
