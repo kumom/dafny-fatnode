@@ -197,6 +197,7 @@ class Node {
     ensures res.0 <= version
     ensures res.0 >= 0 ==> res.0 in ValueSetsVersions
   {
+    // COMMENT: The preconditions are said to be unsatisfied, but Valid() should implies the preconditions of ValidImplies()
     ValidImplies();
     var i := IndexForVersion(version, valuesVersions);
     if i == -1 then
