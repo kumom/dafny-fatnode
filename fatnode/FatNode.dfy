@@ -10,7 +10,7 @@ class Node {
   var data: seq<(int, int)>
 
   // Consistently use A && B ==> C when I wrote A ==> B ==> C
-  predicate Valid()
+  ghost predicate Valid()
     reads this, Repr
     ensures Valid() ==> this in Repr
   {
@@ -70,21 +70,21 @@ class Node {
     && (forall i | 0 <= i < |s| :: 0 <= s[i])
   }
 
-  function method Data(): int
+  function Data(): int
     reads Repr
     requires Valid()
   {
     data[|data| - 1].1
   }
 
-  function ValueSet(): set<int>
+  ghost function ValueSet(): set<int>
     reads Repr
     requires Valid()
   {
     ValueSets[|ValueSets| - 1].1
   }
 
-    function ValueSetVersions(): (res: seq<int>)
+    ghost function ValueSetVersions(): (res: seq<int>)
     reads Repr
     requires Valid()
     ensures Valid()
@@ -101,7 +101,7 @@ class Node {
                     ValueSets[i].0)
   }
 
-  function method DataVersions(): (res: seq<int>)
+  function DataVersions(): (res: seq<int>)
     reads Repr
     requires Valid()
     ensures Sorted(res)
@@ -115,7 +115,7 @@ class Node {
                     data[i].0)
   }
 
-  function method IndexForVersion(version: int, s: seq<int>): (index: int)
+  function IndexForVersion(version: int, s: seq<int>): (index: int)
     requires Sorted(s)
     requires version >= 0
     ensures -1 <= index < |s|
@@ -127,7 +127,7 @@ class Node {
     IndexForVersionHelper(version, s, 0, |s| - 1)
   }
 
-  function method IndexForVersionHelper(version: int, s: seq<int>, lo: int, hi: int): (index: int)
+  function IndexForVersionHelper(version: int, s: seq<int>, lo: int, hi: int): (index: int)
     decreases hi - lo
     requires |s| == 0 ==> lo > hi && hi == -1
     requires 0 <= lo <= |s| 
@@ -160,7 +160,7 @@ class Node {
         IndexForVersionHelper(version, s, lo, mid - 1)
   } 
 
-  function ValueSetAtVersion(version: int) : (res: (int, set<int>))
+  ghost function ValueSetAtVersion(version: int) : (res: (int, set<int>))
     reads Repr
     requires version >= 0
     requires Valid()
@@ -178,7 +178,7 @@ class Node {
       ValueSets[i]
   }
 
-  function method DataAtVersion(version: int): (res: (int, int))
+  function DataAtVersion(version: int): (res: (int, int))
     requires Valid()
     requires version >= 0
     reads Repr 
