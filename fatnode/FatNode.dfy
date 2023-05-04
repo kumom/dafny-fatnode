@@ -67,26 +67,6 @@ class Node {
     && (forall i | 0 <= i < |s| :: 0 <= s[i])
   }
 
-  constructor Init(time: int, value: int)
-    requires time > 0
-    ensures Valid() && fresh(Repr)
-    ensures created == time
-    ensures removed == -1
-    ensures lefts == []
-    ensures rights == []
-    ensures Repr == {this}
-    ensures data == [(time, value)]
-    ensures ValueSets == [(time, {value})]
-  {
-    created := time;
-    removed := -1;
-    lefts := [];
-    rights := [];
-    data := [(time, value)];
-    Repr := {this};
-    ValueSets := [(time, {value})];
-  }
-
   ghost function ValueSet(): set<int>
     reads Repr
     requires Valid()
@@ -103,12 +83,12 @@ class Node {
     ensures forall i | 0 <= i < |ValueSets| :: res[i] == ValueSets[i].0
   { 
     // COMMENT: these two equivalent statements give very different results
-    // assert (forall i | 0 <= i < |data| :: 
-    //       exists j | i <= j < |ValueSets| :: 
-    //         ValueSets[j].0 == data[i].0 && data[i].1 in ValueSets[j].1);
-    assert (forall timedData <- data :: 
-           exists timedValueSet <- ValueSets :: 
-             timedValueSet.0 == timedData.0 && timedData.1 in timedValueSet.1);
+    assert (forall i | 0 <= i < |data| :: 
+          exists j | i <= j < |ValueSets| :: 
+            ValueSets[j].0 == data[i].0 && data[i].1 in ValueSets[j].1);
+    // assert (forall timedData <- data :: 
+    //        exists timedValueSet <- ValueSets :: 
+    //          timedValueSet.0 == timedData.0 && timedData.1 in timedValueSet.1);
     seq(|ValueSets|, i requires 0 <= i < |ValueSets| 
                     requires Valid()
                     reads this, Repr => 
