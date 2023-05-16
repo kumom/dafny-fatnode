@@ -77,7 +77,7 @@ class Node {
   var valuesVersions: seq<int>
   var values: seq<int>
 
-  ghost  predicate isBST(version: int)  
+  ghost predicate isBST(version: int)  
     reads {this} + (set x | x in rights) + (set x | x in lefts)
     requires |ValueSetsVersions| > 0 && version >= ValueSetsVersions[0]
     requires BasicProp()
@@ -375,6 +375,7 @@ class Node {
     ensures VersionIndexForRights(version) >= 0 ==> 
             |rights| > 0 && res == rights[VersionIndexForRights(version)]
     ensures VersionIndexForRights(version) == -1 ==> res == null
+    ensures |rightsVersions| > 0 && version >= rightsVersions[|rightsVersions| - 1] ==> res == Right()
     ensures VersionIndexForRights(version) == -1 
             || res == rights[VersionIndexForRights(version)]
   {
@@ -518,6 +519,9 @@ class Node {
   {
     var x := Value();
     // VersionsLemma(version);
+
+    // COMMENT: Asserting this at this level causes failures
+    assert forall v | v >= ValueSetsVersions[0] :: old(ValueSetUnions(v)) && old(isBST(v));
     
     if x > value {
       assume false;
@@ -539,13 +543,20 @@ class Node {
         ValueSets := ValueSets + [ValueSet() + {value}];
         ValueSetsVersions := ValueSetsVersions + [version];
 
-        assert res.BasicProp() && Sorted(res.ValueSetsVersions);
-        assert old(RightAt(version)) == null;
-        assert old(RightValueSetAt(version)) == {};
-
         assert version > old(ValueSetsVersions[|ValueSetsVersions| - 1]);
         VersionsLemma3(old(ValueSetsVersions), old(rightsVersions), version);
         VersionsLemma3(old(ValueSetsVersions), old(valuesVersions), version);
+
+        assert res.BasicProp() && Sorted(res.ValueSetsVersions);
+        assert old(RightAt(version)) == null by {
+          if (old(|rightsVersions| > 0)) {
+            assert version >= old(rightsVersions[|rightsVersions| - 1]);
+            assert old(RightAt(version)) == old(Right()) == null;
+          } else {
+            assert old(RightAt(version)) == old(Right()) == null;
+          }
+        }
+        assert old(RightValueSetAt(version)) == {};
 
         assert forall v | v >= ValueSetsVersions[0] :: 
           LeftValueSetAt(v) == old(LeftValueSetAt(v)) 
@@ -605,6 +616,25 @@ class Node {
         }
 
         forall v | version > v >= ValueSetsVersions[0] ensures ValueSetUnions(v) && isBST(v) {
+          assert isBST(v) by {
+            // assert old(isBST(v));
+            // assert ValueAt(v) == old(ValueAt(v));
+            assert forall v' <- LeftValueSetAt(v) :: v' < ValueAt(v) by {
+              // assert old(isBST(v));
+              // assert ValueAt(v) == old(ValueAt(v));
+              assert forall v' <- old(LeftValueSetAt(v)) :: v' < old(ValueAt(v));
+              assert LeftValueSetAt(v) == old(LeftValueSetAt(v));
+            }
+            assert forall v' <- RightValueSetAt(v) :: v' > ValueAt(v) by {
+              // assert old(isBST(v));
+              // assert ValueAt(v) == old(ValueAt(v));
+              assert forall v' <- old(RightValueSetAt(v)) :: v' > old(ValueAt(v));
+              assert RightValueSetAt(v) == old(RightValueSetAt(v));
+            }
+          }
+
+          assume false;
+
           assert ValueSetUnions(v) by {
             assert old(ValueSetUnions(v));
             assert old(ValueSetAt(v) == {ValueAt(v)} + LeftValueSetAt(v) + RightValueSetAt(v));
@@ -612,15 +642,11 @@ class Node {
             assert LeftValueSetAt(v) == old(LeftValueSetAt(v));
             assert RightValueSetAt(v) == old(RightValueSetAt(v));
             assert ValueSetAt(v) == {ValueAt(v)} + LeftValueSetAt(v) + RightValueSetAt(v);
-          }
-
-          assert isBST(v) by {
-            assert old(isBST(v));
-            assert RightValueSetAt(v) == old(RightValueSetAt(v));
-            assert ValueAt(v) == old(ValueAt(v));
-            assert LeftValueSetAt(v) == old(LeftValueSetAt(v));
+            assert ValueSetUnions(v);
           }
         }
+
+        assume false;
 
         assert forall v | v >= version :: isBST(v) && ValueSetUnions(v) by {
           forall v | v >= version ensures isBST(v) && ValueSetUnions(v) {
