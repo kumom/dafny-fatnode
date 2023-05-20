@@ -1,4 +1,4 @@
-function VersionIndexHelper(version: int, versions: seq<int>, lo: int, hi: int): (index: int)
+function {:opaque} VersionIndexHelper(version: int, versions: seq<int>, lo: int, hi: int): (index: int)
   decreases hi - lo
   requires |versions| == 0 ==> lo > hi && hi == -1
   requires 0 <= lo <= |versions| 
@@ -13,6 +13,7 @@ function VersionIndexHelper(version: int, versions: seq<int>, lo: int, hi: int):
   ensures index == -1 || versions[index] <= version
   ensures forall i | 0 <= i < index :: versions[i] < version
   ensures index >= 0 ==> forall i | index < i < |versions| :: versions[i] > version
+  ensures |versions| > 0 && version >= versions[|versions| - 1] ==> index == |versions| - 1
 {
   if (lo > hi) then
     assert lo <= 0 || versions[lo - 1] <= version;
@@ -29,17 +30,24 @@ function VersionIndexHelper(version: int, versions: seq<int>, lo: int, hi: int):
       VersionIndexHelper(version, versions, lo, mid - 1)
 } 
 
-function {:opaque} VersionIndex(version: int, versions: seq<int>): (index: int)
+function VersionIndex(version: int, versions: seq<int>): (index: int)
   requires Sorted(versions)
   ensures -1 <= index < |versions|
   ensures index >= 0 <==> |versions| > 0 && versions[0] <= version
-  // ensures index == -1 || IsMaxMinVersion(version, versions[index], versions)
-  ensures index == -1 || IsMaxMinVersionIndex(version, index, versions)
-  ensures version in versions <==> index >= 0 && |versions| > index && versions[index] == version
-  ensures |versions| > 0 && version > versions[|versions| - 1] ==> index == |versions| - 1
-  // ensures |versions| == 0 ==> index == -1
+  // ensures version in versions <==> index >= 0 && |versions| > index && versions[index] == version
+  // ensures |versions| > 0 && version > versions[|versions| - 1] ==> index == |versions| - 1
+  ensures -1 <= index < |versions|  
+  ensures index == -1 <==> (|versions| == 0 || forall k :: 0 <= k < |versions| ==> versions[k] > version)
+  ensures index >= 0 <==> |versions| > 0 && versions[0] <= version
+  ensures index == -1 || versions[index] <= version
+  ensures forall i | 0 <= i < index :: versions[i] < version
+  ensures index >= 0 ==> forall i | index < i < |versions| :: versions[i] > version
+  ensures |versions| > 0 && version >= versions[|versions| - 1] ==> index == |versions| - 1
 {
-  VersionIndexHelper(version, versions, 0, |versions| - 1)
+  if |versions| == 0 || version < versions[0] then
+    -1
+  else
+    VersionIndexHelper(version, versions, 0, |versions| - 1)
 }
 
 predicate Sorted(s: seq<int>) 
@@ -56,28 +64,37 @@ predicate IsMaxMinVersion(queryVersion: int, maxMinVersion: int, versions: seq<i
           && forall v <- versions :: v < maxMinVersion || v == maxMinVersion || v > queryVersion))
 }
 
-predicate IsMaxMinVersionIndex(queryVersion: int, index: int, versions: seq<int>)
-  requires Sorted(versions)
-  requires 0 <= index < |versions|
-{
-  (forall i | 0 <= i < index :: versions[i] < queryVersion)
-  && versions[index] <= queryVersion
-  && (forall i | index < i < |versions| :: versions[i] > queryVersion)
-}
+// predicate IsMaxMinVersionIndex(queryVersion: int, index: int, versions: seq<int>)
+//   requires Sorted(versions)
+//   requires 0 <= index < |versions|
+//   ensures |versions| > 0
+//   ensures |versions| > 0 && queryVersion >= versions[|versions| - 1] ==> index == |versions| - 1
+// {
+//   (forall i | 0 <= i < index :: versions[i] < queryVersion)
+//   && versions[index] <= queryVersion
+//   && (forall i | index < i < |versions| :: versions[i] > queryVersion)
+// }
 
-lemma VersionsLemma3(versions: seq<int>, subVersions: seq<int>, v: int)
+predicate subSequence(seq1: seq<int>, seq2: seq<int>)
+  {forall v <- seq1 :: v in seq2}
+
+lemma OrderInvariant(subVersions: seq<int>, versions: seq<int>, v: int)
   requires |versions| > 0
-  requires forall v <- subVersions :: v in versions
+  requires subSequence(subVersions, versions)
   requires Sorted(versions) && Sorted(subVersions)
   requires v > versions[|versions| - 1]
   ensures |subVersions| > 0 ==> subVersions[|subVersions| - 1] in versions 
   ensures |subVersions| > 0 ==> v > subVersions[|subVersions| - 1]
-  ensures Sorted(subVersions + [v])
-  ensures Sorted(versions + [v])
+  // ensures Sorted(subVersions + [v])
+  // ensures Sorted(versions + [v])
   {}
 
-predicate subSequence(seq1: seq<int>, seq2: seq<int>)
-  {forall v <- seq1 :: v in seq2}
+lemma VersionsExtensionLemma(versions1: seq<int>, versions2: seq<int>, version: int)
+  requires versions1 < versions2
+  requires |versions2| == 0 || version < versions2[|versions1|]
+  requires Sorted(versions1) && Sorted(versions2)
+  ensures VersionIndex(version, versions1) == VersionIndex(version, versions2)
+{}
 
 class Node {
   ghost var Repr: set<Node>
@@ -93,42 +110,30 @@ class Node {
 
   ghost predicate isBST(version: int)  
     reads Repr
-    requires ReprProp() && BasicProp() 
+    requires BasicProp() 
   {
-    if (version < ValueSetsVersions[0]) then
+    if (version < valuesVersions[0]) then
      true
     else
       var v := ValueAt(version);
-      // var r := RightAt(version);
-      // var l := LeftAt(version);
-      (forall v' <- RightValueSetAt(version) :: v' > v)
-      && (forall v' <- LeftValueSetAt(version) :: v' < v)
+      var r := RightAt(version);
+      var l := LeftAt(version);
+      (r != null ==> (r.isBST(version) &&
+                    (forall v' <- r.ValueSetAt(version) :: v' > v)))
+      && (l != null ==> (l.isBST(version) &&
+                    (forall v' <- l.ValueSetAt(version) :: v' < v)))
   }
 
   ghost predicate BinarySearchProp()
     reads Repr
-    requires ReprProp() && BasicProp() 
+    requires BasicProp() 
   {
-    (forall v | v >= ValueSetsVersions[0] :: isBST(v))
+    (forall v | v >= valuesVersions[0] :: isBST(v))
     && (forall v <- lefts + rights | v != null :: v.BinarySearchProp())
   }
 
-  ghost predicate ReprProp()
-    reads this, Repr
-  {
-    && this in Repr
-    && (forall v <- lefts + rights | v != null ::
-        v in Repr && this !in v.Repr && v.Repr < Repr && v.ReprProp())
-    && (forall r <- rights, l <- lefts | r != null && l != null :: 
-        l != r && l.Repr !! r.Repr) 
-    && (forall t <- Repr ::
-        t == this ||
-        (exists node <- lefts + rights :: node != null && t in node.Repr))
-  }
-
   ghost predicate BasicProp()
-    reads Repr
-    requires ReprProp()
+    reads this, Repr
   {
     |ValueSetsVersions| == |ValueSets|
     && |valuesVersions| == |values|
@@ -140,30 +145,11 @@ class Node {
     && ValueSetsVersions[0] == valuesVersions[0]
     && ValueSetsVersions[0] >= 0 
     && Sorted(ValueSetsVersions) && Sorted(valuesVersions) && Sorted(leftsVersions) && Sorted(rightsVersions) 
-    && (forall v <- lefts + rights | v != null :: v.BasicProp())
-  }
-
-  ghost predicate ValueSetUnions(v: int)
-    reads Repr
-    requires ReprProp() && BasicProp() && VersionsProp() 
-    // requires NodesBasicPop(lefts) && NodesBasicPop(rights)
-  {
-    ValueSetAt(v) == {ValueAt(v)} + LeftValueSetAt(v) + RightValueSetAt(v)
-  }
-
-  ghost predicate ValueSetProp()
-    reads Repr
-    requires ReprProp() && BasicProp() && VersionsProp() 
-  {
-    // COMMENT: using forall v | ValueSetsVersions[0] <= v <= ValueSetsVersions[|ValueSetsVersions| - 1] did not work
-    (forall v | ValueSetsVersions[0] <= v :: ValueSetUnions(v))
-    && (forall v <- lefts + rights | v != null :: v.ValueSetProp())
-  }
-
-  ghost predicate VersionsProp()
-    reads Repr
-    requires ReprProp() 
-  {
+    && this in Repr
+    && (forall node <- lefts + rights | node != null ::
+        node in Repr && this !in node.Repr && node.Repr < Repr && node.BasicProp())
+    && (forall r <- rights, l <- lefts | r != null && l != null :: 
+        l != r && l.Repr !! r.Repr) 
     && (forall v <- ValueSetsVersions ::
         v in valuesVersions 
         || (exists node <- lefts + rights :: node != null && v in node.ValueSetsVersions))
@@ -171,12 +157,23 @@ class Node {
     && subSequence(leftsVersions, ValueSetsVersions)
     && subSequence(rightsVersions, ValueSetsVersions)
     && (forall node <- lefts + rights | node != null :: subSequence(node.ValueSetsVersions, ValueSetsVersions))
-    && (forall v <- lefts + rights | v != null :: v.VersionsProp())
+    // && (forall t <- Repr ::
+    //     t == this ||
+    //     (exists node <- lefts + rights :: node != null && t in node.Repr))
+  }
+
+  ghost predicate ValueSetProp()
+    reads Repr
+    requires BasicProp() 
+  {
+    (forall v | valuesVersions[0] <= v :: ValueSetAt(v) == {ValueAt(v)} + LeftValueSetAt(v) + RightValueSetAt(v))
+    && (forall v <- lefts + rights | v != null :: v.ValueSetProp())
   }
 
   ghost function LeftValueSetAt(version: int) : (res: set<int>)
     reads Repr
-    requires ReprProp() && BasicProp() 
+    requires BasicProp() 
+    requires version >= valuesVersions[0]
     ensures LeftAt(version) == null ==> res == {}
     ensures LeftAt(version) != null ==> res == LeftAt(version).ValueSetAt(version)
   {
@@ -189,7 +186,8 @@ class Node {
 
   ghost function RightValueSetAt(version: int) : (res: set<int>)
     reads Repr
-    requires ReprProp() && BasicProp() 
+    requires BasicProp() 
+    requires version >= valuesVersions[0]
     ensures RightAt(version) == null ==> res == {}
     ensures RightAt(version) != null ==> res == RightAt(version).ValueSetAt(version)
   {
@@ -211,7 +209,7 @@ class Node {
     ensures ValueSets == [{value}]
     ensures ValueSetsVersions == [time]
     ensures ValueSetAt(time) == {value}
-    ensures ReprProp() && BasicProp() && VersionsProp() && ValueSetProp() && BinarySearchProp()
+    ensures BasicProp() && ValueSetProp() && BinarySearchProp() 
   {
     lefts := [];
     leftsVersions := [];
@@ -225,9 +223,11 @@ class Node {
   }
 
   function Left(): (l: Node?)
-    reads this
+    reads Repr
+    requires BasicProp() && BinarySearchProp() && ValueSetProp()
     ensures |lefts| == 0 ==> l == null
     ensures |lefts| > 0 ==> l == lefts[|lefts| - 1]
+    ensures l != null ==> l.BasicProp() && l.BinarySearchProp() && l.ValueSetProp()
   {
     if |lefts| > 0 then
       lefts[|lefts| - 1]
@@ -239,7 +239,7 @@ class Node {
     reads t, t.Repr
     requires version >= 0
   {
-    t.ReprProp() && t.BasicProp() && t.VersionsProp() && t.ValueSetProp() && t.BinarySearchProp()
+    t.BasicProp() && t.BinarySearchProp() && t.ValueSetProp()
     && t.ValueSetsVersions == [version]
     // && t.ValueSetAt(version) == {value}
     && t.ValueSets == [{value}]
@@ -251,9 +251,11 @@ class Node {
   }
 
   function Right(): (r: Node?)
-    reads this
+    reads Repr
+    requires BasicProp() && BinarySearchProp() && ValueSetProp()
     ensures |rights| == 0 ==> r == null
     ensures |rights| > 0 ==> r == rights[|rights| - 1]
+    ensures r != null ==> r.BasicProp() && r.BinarySearchProp() && r.ValueSetProp()
   {
     if |rights| > 0 then
       rights[|rights| - 1]
@@ -262,9 +264,11 @@ class Node {
   }
 
   function Value(): (v: int)
-    reads this
+    reads Repr
+    requires BasicProp() && BinarySearchProp() && ValueSetProp()
     requires |values| > 0
     ensures v == values[|values| - 1]
+    ensures BasicProp() && BinarySearchProp() && ValueSetProp()
   {
     values[|values| - 1]
   }
@@ -277,164 +281,77 @@ class Node {
     ValueSets[|ValueSets| - 1]
   }
 
-  ghost function {:opaque} VersionIndexForValueSets(version: int) : (index: int)
-    reads this
-    requires Sorted(ValueSetsVersions)
-    ensures -1 <= index < |ValueSetsVersions|
-    ensures index >= 0 <==> |ValueSetsVersions| > 0 && ValueSetsVersions[0] <= version
-    ensures index == -1 || IsMaxMinVersionIndex(version, index, ValueSetsVersions)
-    ensures version in ValueSetsVersions <==> index >= 0 && |ValueSetsVersions| > index && ValueSetsVersions[index] == version
-    ensures index == VersionIndex(version, ValueSetsVersions)
+  ghost function ValueSetAt(version: int) : (res: set<int>)
+    reads Repr
+    requires BasicProp()
+    ensures version >= ValueSetsVersions[0] ==> res == ValueSets[VersionIndex(version, ValueSetsVersions)]
   {
-    VersionIndex(version, ValueSetsVersions)
-  }
-
-  ghost function {:opaque} ValueSetAt(version: int) : (res: set<int>)
-    reads this
-    requires Sorted(ValueSetsVersions)
-    requires |ValueSetsVersions| == |ValueSets|
-    ensures VersionIndexForValueSets(version) == -1 ==> res == {}
-    ensures |ValueSetsVersions| > 0 && version >= ValueSetsVersions[0] <==> VersionIndexForValueSets(version) >= 0
-    ensures VersionIndexForValueSets(version) >= 0 ==> 
-            |ValueSets| > 0 && res == ValueSets[VersionIndexForValueSets(version)]
-    ensures VersionIndexForValueSets(version) == -1 
-            || res == ValueSets[VersionIndexForValueSets(version)]
-  {
-    var i := VersionIndexForValueSets(version);
+    var i := VersionIndex(version, ValueSetsVersions);
     if i == -1 then
       {}
     else
       ValueSets[i]
   }
 
-  function {:opaque} VersionIndexForValues(version: int) : (index: int)
-    reads this
-    requires Sorted(valuesVersions)
-    ensures -1 <= index < |valuesVersions|
-    // ensures index == -1 <=> |valuesVersions| == 0 && valuesVersions[0] > version
-    ensures index >= 0 <==> |valuesVersions| > 0 && valuesVersions[0] <= version
-    ensures index == -1 || IsMaxMinVersionIndex(version, index, valuesVersions)
-    ensures index == VersionIndex(version, valuesVersions)
-    ensures |valuesVersions| > 0 && version >= valuesVersions[|valuesVersions| - 1] ==> index == |valuesVersions| - 1
-    // ensures index == -1 || valuesVersions[index] in ValueSetsVersions
-    // ensures index <= VersionIndexForValueSets(version)
-  {
-    VersionIndex(version, valuesVersions)
-  }
-
-  function {:opaque} ValueAt(version: int): (res: int)
-    reads this
-    requires Sorted(valuesVersions) && |valuesVersions| == |values|
-    ensures |valuesVersions| > 0 && version >= valuesVersions[0] <==> 
-            VersionIndexForValues(version) >= 0
-    ensures VersionIndexForValues(version) >= 0 ==> 
-            |values| > 0 && res == values[VersionIndexForValues(version)]
-    ensures VersionIndexForValues(version) == -1
-            || res == values[VersionIndexForValues(version)]
-    // ensures VersionIndexForValues(version) == -1 ||
-    //         res in ValueSetAt(version)
-  {
-    var i := VersionIndexForValues(version);
-    if i == -1 then
-      -1
-    else
-      values[i]
-  }
-
-  function {:opaque} VersionIndexForRights(version: int) : (index: int)
-    reads this
-    requires Sorted(rightsVersions)
-    ensures -1 <= index < |rightsVersions|
-    ensures |rightsVersions| > 0 && version < rightsVersions[0] ==> index == -1
-    ensures index >= 0 <==> |rightsVersions| > 0 && rightsVersions[0] <= version
-    ensures index == -1 || IsMaxMinVersionIndex(version, index, rightsVersions)
-    ensures index == VersionIndex(version, rightsVersions)
-    // ensures |rightsVersions| == 0 ==> index == -1
-    // ensures index == -1 || rightsVersions[index] in ValueSetsVersions
-    // ensures index <= VersionIndexForValueSets(version)
-  {
-    VersionIndex(version, rightsVersions)
-  }
-
-  function {:opaque} RightAt(version: int) : (res: Node?)
+  function ValueAt(version: int): (res: int)
     reads Repr
-    requires ReprProp() && BasicProp()
-    ensures res == null || (res in rights && res.BasicProp())
-    ensures |rightsVersions| > 0 && version >= rightsVersions[0] <==> VersionIndexForRights(version) >= 0
-    ensures VersionIndexForRights(version) >= 0 ==> 
-            |rights| > 0 && res == rights[VersionIndexForRights(version)]
-    ensures VersionIndexForRights(version) == -1 ==> res == null
-    ensures |rightsVersions| > 0 && version >= rightsVersions[|rightsVersions| - 1] ==> res == Right()
-    ensures VersionIndexForRights(version) == -1 
-            || res == rights[VersionIndexForRights(version)]
+    requires BasicProp()
+    requires version >= valuesVersions[0]
+    ensures res == values[VersionIndex(version, valuesVersions)]
   {
-    var i := VersionIndexForRights(version);
-    if i == -1 then
+    values[VersionIndex(version, valuesVersions)]
+  }
+
+  function RightAt(version: int) : (res: Node?)
+    reads Repr
+    requires BasicProp() 
+    requires version >= valuesVersions[0]
+    ensures res == null || (res in rights && res.BasicProp())
+    ensures |rightsVersions| > 0 && version >= rightsVersions[0] ==> res == rights[VersionIndex(version, rightsVersions)]
+  {
+    if |rightsVersions| == 0 || version < rightsVersions[0] then
       null
     else
+      var i := VersionIndex(version, rightsVersions);
       rights[i]
   }
 
-  function {:opaque} VersionIndexForLefts(version: int) : (index: int)
-    reads this
-    requires Sorted(leftsVersions)
-    ensures -1 <= index < |leftsVersions|
-    ensures index >= 0 <==> |leftsVersions| > 0 && leftsVersions[0] <= version
-    ensures index == -1 || IsMaxMinVersionIndex(version, index, leftsVersions)
-    ensures index == VersionIndex(version, leftsVersions)
-    // ensures index == -1 || leftsVersions[index] in ValueSetsVersions
-    // ensures index <= VersionIndexForValueSets(version)
-  {
-    VersionIndex(version, leftsVersions)
-  }
-
-  function {:opaque} LeftAt(version: int) : (res: Node?)
+  function LeftAt(version: int) : (res: Node?)
     reads Repr
-    requires ReprProp() && BasicProp()
+    requires BasicProp() 
+    requires version >= valuesVersions[0]
     ensures res == null || (res in lefts && res.BasicProp())
-    ensures |leftsVersions| > 0 && version >= leftsVersions[0] <==> VersionIndexForLefts(version) >= 0
-    ensures VersionIndexForLefts(version) >= 0 ==> 
-            |lefts| > 0 && res == lefts[VersionIndexForLefts(version)]
-    ensures VersionIndexForLefts(version) == -1 ==> res == null
-    ensures VersionIndexForLefts(version) == -1 
-            || res == lefts[VersionIndexForLefts(version)]
+    ensures |leftsVersions| > 0 && version >= leftsVersions[0] ==> res == lefts[VersionIndex(version, leftsVersions)]
   {
-    var i := VersionIndexForLefts(version);
-    if i == -1 then
+    if |leftsVersions| == 0 || version < leftsVersions[0] then
       null
     else
+      var i := VersionIndex(version, leftsVersions);
       lefts[i]
   }
 
   function {:opaque} Find(version: int, value: int) : (res: bool) 
     reads Repr
-    requires ReprProp() && BasicProp() && VersionsProp() && ValueSetProp() && BinarySearchProp()
-    // requires version >= ValueSetsVersions[0]
+    requires BasicProp() && ValueSetProp() && BinarySearchProp()
     ensures res <==> value in ValueSetAt(version)
   {
     if (version < valuesVersions[0]) then
       false
     else
-      var i := VersionIndexForValues(version);
-      if i == -1 then
-        assert VersionIndexForValueSets(version) == -1;
+      if version < valuesVersions[0] then
         assert value !in ValueSetAt(version);
         false
       else
-        assert version >= valuesVersions[0];
         assert isBST(version);  // COMMENT: trigger
-        assert ValueSetUnions(version); // COMMENT: trigger
         var x := ValueAt(version);
         if x > value then
           var left := LeftAt(version);
-          assert value !in RightValueSetAt(version);
           if left == null then 
             false
           else
             left.Find(version, value)
         else if x < value then
           var right := RightAt(version);
-          assert value !in LeftValueSetAt(version);
           if right == null then
             false
           else
@@ -443,133 +360,10 @@ class Node {
           true
   }
 
-  lemma VersionsLemma2(version: int, versions1: seq<int>, versions2: seq<int>)
-    requires versions1 < versions2
-    requires |versions2| == 0 || version < versions2[|versions1|]
-    requires Sorted(versions1) && Sorted(versions2)
-    ensures VersionIndex(version, versions1) == VersionIndex(version, versions2)
-  {}
-
-  // twostate predicate LeftBranchUnchanged()
-  //   reads this, Repr
-  //   requires old(Repr) <= Repr
-  //   requires old(ReprProp()) && old(BasicProp()) 
-  //   // ensures old(lefts) == lefts
-  //   // ensures forall l <- old(lefts) | l != null :: l in old(Repr)
-  //   // ensures forall l <- lefts | l != null :: l in old(Repr)
-  // {
-  //   old(values) == values
-  //   && old(valuesVersions) == valuesVersions
-  //   && old(lefts) == lefts
-  //   && old(leftsVersions) == leftsVersions
-  //   && (forall l <- lefts | l != null :: 
-  //         l.ValueSets == old(l.ValueSets)
-  //         && l.ValueSetsVersions == old(l.ValueSetsVersions)
-  //         && old(l.Repr) == l.Repr
-  //         // && l.LeftBranchUnchanged()
-  //         )
-  // }
-
-  // twostate lemma RightInsert(t: Node, new newNode: Node, version: int, value: int)
-  //   requires old(t.ReprProp()) && old(t.BasicProp()) && old(t.VersionsProp()) && old(t.ValueSetProp()) && old(t.BinarySearchProp())
-  //   requires version > old(t.ValueSetsVersions[|t.ValueSetsVersions| - 1])
-  //   // unchanged part
-  //   requires old(t.lefts) == t.lefts
-  //   requires forall l <- t.lefts | l != null :: old(l.Repr) == l.Repr
-  //   requires forall r <- old(t.rights) | r != null :: 
-  //             r.ValueSets == old(r.ValueSets) && r.ValueSetsVersions == old(r.ValueSetsVersions)
-  //   // changed part
-  //   requires NewNodeValid(newNode, version, value)
-  //   requires old(t.Repr) + {newNode} == t.Repr
-  //   requires t.rights == old(t.rights) + [newNode]
-  //   requires t.rightsVersions == old(t.rightsVersions) + [version]
-  //   requires t.ValueSets == old(t.ValueSets) + [old(t.ValueSet()) + {value}]
-  //   requires t.ValueSetsVersions == old(t.ValueSetsVersions) + [version]
-  //   ensures t.ReprProp() && t.BasicProp() && t.VersionsProp() && t.ValueSetProp() && t.BinarySearchProp() 
-  // {
-  //   assert Sorted(newNode.ValueSetsVersions);
-  //   assert version > old(t.ValueSetsVersions[|t.ValueSetsVersions| - 1]);
-  //   VersionsLemma3(old(t.ValueSetsVersions), old(t.rightsVersions), version);
-  //   VersionsLemma3(old(t.ValueSetsVersions), old(t.valuesVersions), version);
-  //   assert Sorted(t.ValueSetsVersions);
-  //   assert Sorted(t.rightsVersions);
-
-  //   assert t.ReprProp();
-
-  //   assume false;
-
-  //   assert t.BasicProp();
-  //   assert old(t.ReprProp());
-  //   // assert old(NodesBasicPop(t.lefts));
-  //   assert forall v <- old(t.lefts) | v != null :: old(v.BasicProp());
-  //   assert old(t.lefts) == t.lefts;
-  //   assert forall v <- t.lefts | v != null :: v.BasicProp();
-  //   // assert NodesBasicPop(t.lefts);
-
-  //   assume false;
-
-  //   // assert NodesBasicPop(t.rights);
-
-    
-
-  //   assert t.VersionsProp() by {
-  //     assert old(t.PartOfValueSetsVersions1(t.rightsVersions));
-  //       assert version in t.rightsVersions && version in t.ValueSetsVersions;
-  //   } 
-
-  //   assert forall v | v >= t.ValueSetsVersions[0] :: t.ValueAt(v) == old(t.ValueAt(v));
-  //   assume forall v | v >= t.ValueSetsVersions[0] :: t.LeftValueSetAt(v) == old(t.LeftValueSetAt(v));
-  //   assume forall v | v >= version :: 
-  //         && old(t.RightValueSetAt(v)) == {} 
-  //         && t.RightValueSetAt(v) == {value};
-
-  //   forall v | version > v >= t.ValueSetsVersions[0] ensures t.ValueSetAt(v) == old(t.ValueSetAt(v)) {
-  //     VersionsLemma2(v, old(t.ValueSetsVersions), t.ValueSetsVersions);
-  //   }
-
-  //   if (old(|t.rightsVersions| > 0)) {
-  //     assert version > old(t.rightsVersions[|t.rightsVersions| - 1]);
-  //   }
-
-  //   forall v | version > v >= t.ValueSetsVersions[0] ensures t.RightAt(v) == old(t.RightAt(v)) {
-  //     VersionsLemma2(v, old(t.rightsVersions), t.rightsVersions);
-  //     assert t.VersionIndexForRights(v) == old(t.VersionIndexForRights(v));
-  //     assert t.RightAt(v) == old(t.RightAt(v));
-  //     assert t.RightValueSetAt(v) == old(t.RightValueSetAt(v));
-  //   }
-
-  //   assert t.ValueSetProp() by {
-  //     forall v | v >= t.ValueSetsVersions[0] ensures t.ValueSetUnions(v) {
-  //       assert old(t.ValueSetUnions(v));
-  //       assert old(t.ValueSetAt(v)) == {old(t.ValueAt(v))} + old(t.LeftValueSetAt(v)) + old(t.RightValueSetAt(v));
-
-  //       if (v >= version) {
-  //         assert t.ValueSetAt(v) == old(t.ValueSetAt(v)) + {value};
-  //         assert old(t.RightValueSetAt(v)) == {};
-  //         assert t.RightValueSetAt(v) == {value};
-  //         assert t.ValueSetAt(v) == {t.ValueAt(v)} + t.LeftValueSetAt(v) + t.RightValueSetAt(v);
-  //       }
-  //     }
-  //   }
-
-  //   // BinarySearchProp()
-  //   forall v | v >= t.ValueSetsVersions[0] ensures t.isBST(v) {
-  //     assert old(t.isBST(v));
-  //     if (v >= version) {
-  //       assume false;
-  //       assert old(t.RightValueSetAt(v)) == {};
-  //       assert t.RightValueSetAt(v) == {value};
-  //       assert old(t.LeftValueSetAt(v)) == t.LeftValueSetAt(v);
-  //     } else {
-  //       assume false;
-  //     }
-  //   }
-  // }
-
-  method {:vcs_split_on_every_assert} Insert(version: int, value: int) returns (res: Node?) 
+  method Insert(version: int, value: int) returns (res: Node?) 
     modifies Repr
     decreases Repr
-    requires ReprProp() && BasicProp() && VersionsProp() && ValueSetProp() && BinarySearchProp()
+    requires BasicProp() && BinarySearchProp() && ValueSetProp()
     requires version > ValueSetsVersions[|ValueSetsVersions| - 1]
     ensures res != null ==> 
       fresh(res) && Repr == old(Repr) + {res} && NewNodeValid(res, version, value)
@@ -578,7 +372,8 @@ class Node {
       && lefts == old(lefts) && leftsVersions == old(leftsVersions)
       && rights == old(rights)
       && values == old(values) && ValueSets == old(ValueSets)
-    ensures ReprProp() && BasicProp() && VersionsProp() && ValueSetProp() && BinarySearchProp()
+    ensures BasicProp() && BinarySearchProp() && ValueSetProp()
+    // ensures res != null <==> value !in ValueSet()
     // ensures value < Value() && res != null ==>
     //   leftsVersions == old(leftsVersions) + [version]
     //   && lefts == old(lefts) + [res]
@@ -596,159 +391,113 @@ class Node {
     var x := Value();
     var right := Right();
     var left := Left();
+    var valueSet := ValueSet();
 
-    label L:
+    OrderInvariant(old(leftsVersions), old(ValueSetsVersions), version);
+    OrderInvariant(old(rightsVersions), old(ValueSetsVersions), version);
+    OrderInvariant(old(valuesVersions), old(ValueSetsVersions), version);
+
 
     if x > value {
       if left == null { 
+        assume false;
         res := new Node.Init(version, value);
+        lefts := lefts + [res];
+        leftsVersions := leftsVersions + [version];
+
+        
       } else {
+        assume false;
+        OrderInvariant(left.ValueSetsVersions, ValueSetsVersions, version);
         res := left.Insert(version, value);
       }
     } else if x < value {
       if right == null {
-
         res := new Node.Init(version, value);        
         rights := rights + [res];
         rightsVersions := rightsVersions + [version];
 
-        assert old@L(rights) == [] && old@L(rightsVersions) == [];
-                
-        // Repr := Repr + {res};
-        // ValueSets := ValueSets + [ValueSet() + {value}];
-        // ValueSetsVersions := ValueSetsVersions + [version];
+        if (res != null) {
+          Repr := Repr + res.Repr;
+          ValueSets := ValueSets + [valueSet + {value}];
+          ValueSetsVersions := ValueSetsVersions + [version];
+        }
 
-        // assert lefts == old@L(lefts);
+        assert BasicProp() by {
+          // COMMENT: adding these two intermediate assertions increases verification time
+          assert Sorted(rightsVersions);
+          assert Sorted(ValueSetsVersions);
+        }
 
-        // assert ReprProp();
-        // assert BasicProp() by {
-        //   assert old@L(BasicProp());
-        //   assert leftsVersions == old@L(leftsVersions);
-        //   VersionsLemma3(old@L(ValueSetsVersions), old@L(rightsVersions), version);
-        //   assert |rights| == |rightsVersions|;
-        //   assert Sorted(rightsVersions);
-        //   assert Sorted(ValueSetsVersions);
-        // }
+        assume false;
 
-        // forall v | v >= ValueSetsVersions[0] ensures ValueAt(v) == old@L(ValueAt(v)) {
-        //   assert valuesVersions == old@L(valuesVersions);
-        //   assert values == old@L(values);
-        //   assert VersionIndexForValues(v) == old@L(VersionIndexForValues(v));
-        // }
+        forall v | version > v >= valuesVersions[0] ensures RightAt(v) == old(RightAt(v)) {
+          VersionsExtensionLemma(old(rightsVersions), rightsVersions, v);
+        }
+        assert forall v | v >= version :: RightAt(v) == res;
 
-        // forall v | v >= ValueSetsVersions[0] ensures LeftAt(v) == old@L(LeftAt(v)) && LeftValueSetAt(v) == old@L(LeftValueSetAt(v)) {
-        //   assert leftsVersions == old@L(leftsVersions);
-        //   assert VersionIndexForLefts(v) == old@L(VersionIndexForLefts(v));
-        //   assert LeftAt(v) == old@L(LeftAt(v));
-        //   if (LeftAt(v) != null) {
-        //     assert LeftAt(v).ValueSetsVersions == old@L(LeftAt(v).ValueSetsVersions);
-        //     // assert LeftAt(v).ValueSetAt(v) == old@L(LeftAt(v).ValueSetAt(v));
-        //   }
-        // }
+        assert forall v | v >= valuesVersions[0] :: LeftAt(v) == old(LeftAt(v));
+        assert forall v | v >= valuesVersions[0] :: ValueAt(v) == old(ValueAt(v));
 
-        // assert {:split_here} VersionsProp() by {
-        //   assert old@L(VersionsProp());
-        //   assert valuesVersions == old@L(valuesVersions);
-        //   assert ValueSetsVersions == old@L(ValueSetsVersions) + [version];
-        //   assert (forall v <- ValueSetsVersions ::
-        //                 v in valuesVersions 
-        //                 || (exists node <- lefts + rights :: node != null && v in node.ValueSetsVersions));
-        //   assert subSequence(valuesVersions, ValueSetsVersions);
-        //   assert leftsVersions == old@L(leftsVersions);
-        //   assert subSequence(leftsVersions, ValueSetsVersions);
-        //   assert subSequence(rightsVersions, ValueSetsVersions);
+        assert BinarySearchProp() by {
+          forall v | v >= valuesVersions[0] ensures isBST(v) {
+            assert old(isBST(v));
+            assert LeftAt(v) == old(LeftAt(v));
+            assert ValueAt(v) == old(ValueAt(v));
+            if (v < version) {
+              assert RightAt(v) == old(RightAt(v));
+              assert (RightAt(v) != null ==> (RightAt(v).isBST(v) &&
+                    (forall v' <- RightAt(v).ValueSetAt(v) :: v' > ValueAt(v))))
+                    && (LeftAt(v) != null ==> (LeftAt(v).isBST(v) &&
+                    (forall v' <- LeftAt(v).ValueSetAt(v) :: v' < ValueAt(v))));
+            } else {
+              assert RightAt(v) == res;
+              assert res.ValueSetAt(v) == {value};
+              
+              assert ValueAt(v) == x;
+              assert (RightAt(v) != null ==> (RightAt(v).isBST(v) &&
+                    (forall v' <- RightAt(v).ValueSetAt(v) :: v' > ValueAt(v))))
+                    && (LeftAt(v) != null ==> (LeftAt(v).isBST(v) &&
+                    (forall v' <- LeftAt(v).ValueSetAt(v) :: v' < ValueAt(v))));
+            }
+          }
+          assume forall v <- lefts + rights | v != null :: v.BinarySearchProp();
+        }
 
-        //   assert subSequence(res.ValueSetsVersions, ValueSetsVersions);
-          
-        //   assert rights == old@L(rights) + [res];
-        //   assert (forall node <- lefts + rights | node != null :: subSequence(node.ValueSetsVersions, ValueSetsVersions));
-        //   assert res.VersionsProp();
-        //   assert forall v <- lefts + rights | v != null && v != res :: v.VersionsProp();
-        //   assert (forall v <- lefts + rights | v != null :: v.VersionsProp());
-        // }
+        assume false;
 
-    //     assume false;
-
-    //     assert ValueSetProp() by {
-    //       assert forall v <- lefts + rights | v != null :: v.ValueSetProp();
-    //     }
-
-    //     assume false;
-
-    //     assert BinarySearchProp() by {
-    //       assert old@L(BinarySearchProp());
-
-    //       assume false;
-
-    //       assert rights == old@L(rights) + [res];
-    //       assert rightsVersions == old@L(rightsVersions) + [version];
-
-    //       forall v | v >= ValueSetsVersions[0] ensures isBST(v) {
-    //         assert old@L(isBST(v));
-    //         if (v < version) {
-    //           assert isBST(v) by {
-    //             assert RightAt(v) == old@L(RightAt(v)) by {
-    //               VersionsLemma2(v, old@L(rightsVersions), rightsVersions);
-    //               assert VersionIndexForRights(v) == old@L(VersionIndexForRights(v));
-    //             }
-    //             assert ValueAt(v) == old@L(ValueAt(v)) by {
-
-    //             }
-    //             // VersionsLemma2(v, old@L(ValueSetsVersions), ValueSetsVersions);
-    //             if (RightAt(v) != null) {
-    //               assert forall r <- rights | r != null && r != res :: r.ValueSetsVersions == old@L(r.ValueSetsVersions);
-    //               assert RightAt(v).ValueSetAt(v) == old@L(RightAt(v).ValueSetAt(v));
-    //             }
-    //             assert LeftAt(v) == old@L(LeftAt(v));
-    //             if (LeftAt(v) != null) {
-    //               assert LeftAt(v).ValueSetAt(v) == old@L(LeftAt(v).ValueSetAt(v));
-    //             }
-                
-    //           }
-    //         } else {
-    //           assume isBST(v);
-    //         }
-            
-    //                   // (r != null ==> (forall v' <- r.ValueSetAt(version) :: v' > v) && r.isBST(version))
-    //   // && (l != null ==> (forall v' <- l.ValueSetAt(version) :: v' < v) && l.isBST(version))
-    //       }
-
-    //       assert forall v <- lefts + rights | v != null && v != res :: v.BinarySearchProp();
-    //       assume (forall v <- lefts + rights | v != null :: v.BinarySearchProp());
-    //     }
         
 
+        assume false;
+
+        assert ValueSetProp() by {
+          assert old(ValueSetProp());
+          forall v | valuesVersions[0] <= v ensures ValueSetAt(v) == {ValueAt(v)} + LeftValueSetAt(v) + RightValueSetAt(v) {
+            assume ValueSetAt(v) == {ValueAt(v)} + LeftValueSetAt(v) + RightValueSetAt(v);
+          }
+          assume forall v <- lefts + rights | v != null && v != res :: v.ValueSetProp();
+          assert res.ValueSetProp();
+        }
+
+        assume false;
       } else {
         assume false;
+        OrderInvariant(ValueSetsVersions, right.ValueSetsVersions, version);
         res := right.Insert(version, value);
-        // if (res != null) {
-        //   assume false;
-        //   assert Sorted(rightsVersions);
-        // //   Repr := Repr + {res};
-        // //   ValueSets := ValueSets + [ValueSet() + {value}];
-        // //   ValueSetsVersions := ValueSetsVersions + [version];
-        //   assert Sorted(ValueSetsVersions);
-        //   assert valuesVersions == old(valuesVersions);
-        //   assert values == old(values);
+        assert rights == old(rights);
+        assert rightsVersions == old(rightsVersions);
 
-        //   // RightInsert(this, res, version, value);
-        // } 
+        Repr := Repr + right.Repr;
+        if (res != null) {
+            ValueSets := ValueSets + [valueSet + {value}];
+            ValueSetsVersions := ValueSetsVersions + [version];
+        }
       }
     } else {
+      assume false;
       // COMMENT: comment out the "assume false" below increases the verification time from 13s to 35s
       res := null;
     }
 
-    if (res != null) {
-        Repr := Repr + {res};
-        ValueSets := ValueSets + [ValueSet() + {value}];
-        ValueSetsVersions := ValueSetsVersions + [version];
-
-        if (x < value && rights == [res]) {
-            assert old@L(rights) == [];
-        } else {
-            assert old@L(rights) == rights;
-        }
-    }
   }
 }
