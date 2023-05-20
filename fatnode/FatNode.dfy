@@ -435,8 +435,6 @@ class Node {
       assert forall node <- lefts | node != null :: node.ValueSetProp();
       assert forall node <- rights | node != null && node != newNode :: node.ValueSetProp();
 
-      assume false;
-
       forall v | valuesVersions[0] <= v ensures ValueSetAt(v) == {ValueAt(v)} + LeftValueSetAt(v) + RightValueSetAt(v) {
         assert old(ValueSetAt(v) == {ValueAt(v)} + LeftValueSetAt(v) + RightValueSetAt(v));
         assert LeftValueSetAt(v) == old(LeftValueSetAt(v));
@@ -444,7 +442,10 @@ class Node {
         if (v < version) {
           VersionsExtensionLemma(old(ValueSetsVersions), ValueSetsVersions, v);
           assert ValueSetAt(v) == old(ValueSetAt(v));
-          assert RightValueSetAt(v) == old(RightValueSetAt(v));
+          // COMMENT: A bug?
+          assert RightValueSetAt(v) == old(RightValueSetAt(v)) by {
+            assert forall v | version > v > valuesVersions[0] :: RightValueSetAt(v) == old(RightValueSetAt(v));
+          }
           assume ValueSetAt(v) == {ValueAt(v)} + LeftValueSetAt(v) + RightValueSetAt(v);
         } else {
           OrderInvariant(old(valuesVersions), old(ValueSetsVersions), v);
