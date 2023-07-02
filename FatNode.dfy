@@ -115,76 +115,27 @@ class Node {
   var valuesVersions: seq<int>
   var values: seq<int>
 
-  ghost predicate isBST(version: int)  
-    reads Repr
-    requires BasicProp() 
-  {
-    if (version < valuesVersions[0]) then
-     true
-    else
-      var v := ValueAt(version);
-      (forall v' <- RightValueSetAt(version) :: v' > v)
-      && (forall v' <- LeftValueSetAt(version) :: v' < v)
-  }
+  // ghost predicate isBST(version: int)  
+  //   reads Repr
+  //   requires BasicProp() 
+  // {
+  //   if (version < valuesVersions[0]) then
+  //    true
+  //   else
+  //     var v := ValueAt(version);
+  //     (forall v' <- RightValueSetAt(version) :: v' > ValueAt(version))
+  //     && (forall v' <- LeftValueSetAt(version) :: v' < ValueAt(version))
+  // }
 
   ghost predicate BinarySearchProp()
     reads Repr
     requires BasicProp() 
   {
-    (forall v | v >= valuesVersions[0] :: isBST(v))
+    (forall v | v >= valuesVersions[0] :: (forall v' <- RightValueSetAt(v) :: v' > ValueAt(v))
+      && (forall v' <- LeftValueSetAt(v) :: v' < ValueAt(v)))
+    // (forall v | v >= valuesVersions[0] :: isBST(v))
     && (forall v <- lefts | v != null :: v.BinarySearchProp())
     && (forall v <- rights | v != null :: v.BinarySearchProp())
-  }
-
-  ghost predicate BasicProp()
-    reads this, Repr
-  {
-    |ValueSetsVersions| == |ValueSets|
-    && |valuesVersions| == |values|
-    && |leftsVersions| == |lefts|
-    && |rightsVersions| == |rights|
-    && |ValueSetsVersions| > 0
-    && |valuesVersions| > 0
-    && |ValueSetsVersions| <= |leftsVersions| + |rightsVersions| + |valuesVersions|
-    && ValueSetsVersions[0] == valuesVersions[0]
-    && ValueSetsVersions[0] >= 0 
-    && Sorted(ValueSetsVersions) && Sorted(valuesVersions) && Sorted(leftsVersions) && Sorted(rightsVersions) 
-    && this in Repr
-    && (forall node <- lefts | node != null ::
-        node in Repr && this !in node.Repr && node.Repr < Repr && subSequence(node.ValueSetsVersions, ValueSetsVersions) &&  node.BasicProp())
-    && (forall node <- rights | node != null ::
-        node in Repr && this !in node.Repr && node.Repr < Repr && subSequence(node.ValueSetsVersions, ValueSetsVersions) && node.BasicProp())
-    && (forall r <- rights, l <- lefts | r != null && l != null :: 
-        l != r && l.Repr !! r.Repr) 
-    // && (forall node <- Repr ::
-    //     node == this
-    //     || (exists l <- lefts :: l != null && node in l.Repr)
-    //     || (exists r <- rights :: r != null && node in r.Repr))
-    // && (forall v <- ValueSetsVersions ::
-    //     v in valuesVersions 
-    //     || (exists node <- lefts + rights :: node != null && v in node.ValueSetsVersions))
-    && subSequence(valuesVersions, ValueSetsVersions)
-    && subSequence(leftsVersions, ValueSetsVersions)
-    && subSequence(rightsVersions, ValueSetsVersions)
-    // && (forall node <- Repr | node != this :: subSequence(node.ValueSetsVersions, ValueSetsVersions))
-    // && (forall node1 <- Repr, node2 <- Repr | node1 != node2 :: node1.ValueSetsVersions != node2.ValueSetsVersions)
-    // && (forall t <- Repr ::
-    //     t == this ||
-    //     (exists node <- lefts + rights :: node != null && t in node.Repr))
-  }
-
-  ghost predicate NoAliasingProp()
-    reads Repr
-    requires BasicProp()
-  {
-    forall t1 <- Repr, t2 <- Repr | t1 != t2 :: t1.values != t2.values 
-      && t1.valuesVersions != t2.valuesVersions 
-      && t1.rights != t2.rights
-      && t1.rightsVersions != t2.rightsVersions
-      && t1.lefts != t2.lefts
-      && t1.leftsVersions != t2.leftsVersions
-      && t1.ValueSets != t2.ValueSets
-      && t1.ValueSetsVersions != t2.ValueSetsVersions
   }
 
   ghost predicate ValueSetProp()
@@ -196,10 +147,58 @@ class Node {
     && (forall v <- rights | v != null :: v.ValueSetProp())
   }
 
+  ghost predicate BasicProp()
+    reads this, Repr
+  {
+    |ValueSetsVersions| == |ValueSets|
+    && |valuesVersions| == |values|
+    && |leftsVersions| == |lefts|
+    && |rightsVersions| == |rights|
+    && |ValueSetsVersions| > 0
+    && |valuesVersions| > 0
+    // && |ValueSetsVersions| <= |leftsVersions| + |rightsVersions| + |valuesVersions|
+    && ValueSetsVersions[0] == valuesVersions[0]
+    && ValueSetsVersions[0] >= 0 
+    && Sorted(ValueSetsVersions) && Sorted(valuesVersions) && Sorted(leftsVersions) && Sorted(rightsVersions) 
+    && this in Repr
+    && (forall node <- lefts | node != null ::
+        node in Repr && this !in node.Repr && node.Repr < Repr && subSequence(node.ValueSetsVersions, ValueSetsVersions) && node.BasicProp())
+    && (forall node <- rights | node != null ::
+        node in Repr && this !in node.Repr && node.Repr < Repr && subSequence(node.ValueSetsVersions, ValueSetsVersions) && node.BasicProp())
+    && (forall r <- rights, l <- lefts | r != null && l != null :: 
+        l != r && l.Repr !! r.Repr) 
+    && subSequence(valuesVersions, ValueSetsVersions)
+    && subSequence(leftsVersions, ValueSetsVersions)
+    && subSequence(rightsVersions, ValueSetsVersions)
+    // && (forall node <- Repr ::
+    //     node == this
+    //     || (exists l <- lefts :: l != null && node in l.Repr)
+    //     || (exists r <- rights :: r != null && node in r.Repr))
+    // && (forall v <- ValueSetsVersions ::
+    //     v in valuesVersions 
+    //     || (exists node <- lefts + rights :: node != null && v in node.ValueSetsVersions))
+    
+    // && (forall node <- Repr | node != this :: subSequence(node.ValueSetsVersions, ValueSetsVersions))
+    // && (forall node1 <- Repr, node2 <- Repr | node1 != node2 :: node1.ValueSetsVersions != node2.ValueSetsVersions)
+  }
+
+  ghost predicate NewNodeValid(t: Node, version: int, value: int)
+    reads t, t.Repr
+    requires version >= 0
+  {
+    t.BasicProp() && t.BinarySearchProp() && t.ValueSetProp()
+    && t.ValueSetsVersions == [version]
+    && t.ValueSets == [{value}]
+    && t.valuesVersions == [version]
+    && t.values == [value]
+    && t.Repr == {t}
+    && t.lefts == []
+    && t.rights == []
+  }
+
   ghost function LeftValueSetAt(version: int) : (res: set<int>)
     reads Repr
     requires BasicProp() 
-    // requires version >= valuesVersions[0]
     ensures LeftAt(version) == null ==> res == {}
     ensures LeftAt(version) != null ==> res == LeftAt(version).ValueSetAt(version)
   {
@@ -213,7 +212,6 @@ class Node {
   ghost function RightValueSetAt(version: int) : (res: set<int>)
     reads Repr
     requires BasicProp() 
-    // requires version >= valuesVersions[0]
     ensures RightAt(version) == null ==> res == {}
     ensures RightAt(version) != null ==> res == RightAt(version).ValueSetAt(version)
   {
@@ -227,15 +225,6 @@ class Node {
   constructor Init(time: int, value: int)
     requires time >= 0
     ensures fresh(Repr)
-    // ensures lefts == []
-    // ensures rights == []
-    // ensures Repr == {this}
-    // ensures values == [value]
-    // ensures valuesVersions == [time]
-    // ensures ValueSets == [{value}]
-    // ensures ValueSetsVersions == [time]
-    // ensures ValueSetAt(time) == {value}
-    // ensures BasicProp() && BinarySearchProp() && ValueSetProp()
     ensures NewNodeValid(this, time, value)
   {
     lefts := [];
@@ -262,21 +251,6 @@ class Node {
       null
   }
 
-  ghost predicate NewNodeValid(t: Node, version: int, value: int)
-    reads t, t.Repr
-    requires version >= 0
-  {
-    t.BasicProp() && t.BinarySearchProp() && t.ValueSetProp()
-    && t.ValueSetsVersions == [version]
-    // && ValueSetAt(version) == {value}
-    && t.ValueSets == [{value}]
-    && t.valuesVersions == [version]
-    && t.values == [value]
-    && t.Repr == {t}
-    && t.lefts == []
-    && t.rights == []
-  }
-
   function Right(): (r: Node?)
     reads Repr
     requires BasicProp() && BinarySearchProp() && ValueSetProp()
@@ -293,16 +267,14 @@ class Node {
   function Value(): (v: int)
     reads Repr
     requires BasicProp() && BinarySearchProp() && ValueSetProp()
-    requires |values| > 0
     ensures v == values[|values| - 1]
-    ensures BasicProp() && BinarySearchProp() && ValueSetProp() 
   {
     values[|values| - 1]
   }
 
   ghost function ValueSet(): (s: set<int>)
-    reads this
-    requires |ValueSets| > 0
+    reads Repr
+    requires BasicProp() && BinarySearchProp() && ValueSetProp()
     ensures s == ValueSets[|ValueSets| - 1]
   {
     ValueSets[|ValueSets| - 1]
@@ -332,7 +304,6 @@ class Node {
   function RightAt(version: int) : (res: Node?)
     reads Repr
     requires BasicProp() 
-    // requires version >= valuesVersions[0]
     ensures res == null || (res in rights && res.BasicProp())
     ensures |rightsVersions| > 0 && version >= rightsVersions[0] ==> res == rights[VersionIndex(version, rightsVersions)]
   {
@@ -346,7 +317,6 @@ class Node {
   function LeftAt(version: int) : (res: Node?)
     reads Repr
     requires BasicProp() 
-    // requires version >= valuesVersions[0]
     ensures res == null || (res in lefts && res.BasicProp())
     ensures |leftsVersions| > 0 && version >= leftsVersions[0] ==> res == lefts[VersionIndex(version, leftsVersions)]
   {
@@ -369,7 +339,7 @@ class Node {
         assert value !in ValueSetAt(version);
         false
       else
-        assert isBST(version);  // COMMENT: trigger
+        // assert isBST(version);  // COMMENT: trigger
         var x := ValueAt(version);
         if x > value then
           var left := LeftAt(version);
@@ -391,17 +361,17 @@ class Node {
     reads Repr
     requires BasicProp() && old(BasicProp())
     requires old(ValueSetProp()) && old(BinarySearchProp())
-    // ensures Unchanged() ==> 
-    //         forall v | valuesVersions[0] <= v :: 
-    //           ValueSetAt(v) == old(ValueSetAt(v)) 
-    //           && LeftValueSetAt(v) == old(LeftValueSetAt(v)) 
-    //           && RightValueSetAt(v) == old(RightValueSetAt(v))
-    // ensures Unchanged() ==> valuesVersions[0] == old(valuesVersions[0])
-    // ensures Unchanged() ==> 
-    //           forall v | valuesVersions[0] <= v :: 
-    //           old(ValueSetAt(v) == {ValueAt(v)} + LeftValueSetAt(v) + RightValueSetAt(v))
-    // ensures Unchanged() ==> ValueSetProp()
-    // ensures Unchanged() ==> BinarySearchProp()
+    ensures Unchanged() ==> 
+            forall v | valuesVersions[0] <= v :: 
+              ValueSetAt(v) == old(ValueSetAt(v)) 
+              && LeftValueSetAt(v) == old(LeftValueSetAt(v)) 
+              && RightValueSetAt(v) == old(RightValueSetAt(v))
+    ensures Unchanged() ==> valuesVersions[0] == old(valuesVersions[0])
+    ensures Unchanged() ==> 
+              forall v | valuesVersions[0] <= v :: 
+              old(ValueSetAt(v) == {ValueAt(v)} + LeftValueSetAt(v) + RightValueSetAt(v))
+    ensures Unchanged() ==> ValueSetProp()
+    ensures Unchanged() ==> BinarySearchProp()
   {
     values == old(values)
     && valuesVersions == old(valuesVersions)
@@ -425,27 +395,33 @@ class Node {
   twostate lemma InsertRight(new newNode: Node, version: int, value: int)
     requires old(BasicProp() && BinarySearchProp() && ValueSetProp())
     requires version > old(ValueSetsVersions[|ValueSetsVersions| - 1])
+    requires value > old(Value())
     requires NewNodeValid(newNode, version, value)
     requires BasicProp()
     requires old(RightAt(version)) == null
     // modifications
     requires Repr == old(Repr) + {newNode} 
-    requires rights == old(rights) + [newNode]
-    requires rightsVersions == old(rightsVersions) + [version]
     requires ValueSets == old(ValueSets) + [old(ValueSet()) + {value}]
     requires ValueSetsVersions == old(ValueSetsVersions) + [version]
+    requires rights == old(rights) + [newNode]
+    requires rightsVersions == old(rightsVersions) + [version]
     // unchanged part
     requires values == old(values)
               && valuesVersions == old(valuesVersions)
               && lefts == old(lefts)
               && leftsVersions == old(leftsVersions)
-              && (forall node <- lefts | node != null :: node.Unchanged())
-              && (forall node <- old(rights) | node != null :: node in old(Repr) && node.BasicProp() && node.Unchanged())
+              && (forall node <- Repr | node != this && old(allocated(node)) :: unchanged(node))
     ensures BinarySearchProp() && ValueSetProp()
+    ensures value in ValueSetAt(version) 
   {
+
     forall v | version > v >= valuesVersions[0] ensures RightValueSetAt(v) == old(RightValueSetAt(v)) {
       VersionsExtensionLemma(old(rightsVersions), rightsVersions, v);
       assert RightAt(v) == old(RightAt(v));
+      if (old(RightAt(v)) != null) {
+        assert RightAt(v).ValueSetAt(v) == old(RightAt(v).ValueSetAt(v));
+        assert RightValueSetAt(v) == old(RightValueSetAt(v));
+      }
     }
 
     forall v | v >= version ensures ValueAt(v) == old(Value()) && RightValueSetAt(v) == {value} {
@@ -457,6 +433,7 @@ class Node {
       assert old(ValueSetProp());
       assert newNode.ValueSetProp();
       assert forall node <- lefts | node != null :: node.ValueSetProp();
+
       assert forall node <- rights | node != null && node != newNode :: node.ValueSetProp();
 
       forall v | valuesVersions[0] <= v ensures ValueSetAt(v) == {ValueAt(v)} + LeftValueSetAt(v) + RightValueSetAt(v) {
@@ -480,122 +457,119 @@ class Node {
         }
       }
     }
-    assume BinarySearchProp();
-   
-  }
 
-  method RemoveMin(version: int, value: int, parent: Node) returns (min: int)
-    modifies {parent} + Repr
-    decreases Repr
-    requires this in parent.lefts || this in parent.rights
-    requires BasicProp() && BinarySearchProp() && ValueSetProp()
-    ensures BasicProp() && BinarySearchProp() && ValueSetProp()
-  {
-    var l := Left();
-    var v := Value();
+    assert BinarySearchProp() by {
+      assert old(BinarySearchProp());
+      assert forall v <- lefts | v != null :: v.BinarySearchProp();
+      assert newNode.BinarySearchProp();
+      assert forall v <- rights | v != null && v != newNode :: v.BinarySearchProp();
 
-    if (l == null) {
-      assume false;
-      parent.lefts := parent.lefts + [null];
-      parent.leftsVersions := parent.leftsVersions + [version];
-      min := v;
-      assume false;
-    } else {
-      min := l.RemoveMin(version, value, this);
+      forall v | v >= valuesVersions[0] ensures (forall v' <- RightValueSetAt(v) :: v' > ValueAt(v))
+                                                && (forall v' <- LeftValueSetAt(v) :: v' < ValueAt(v)) {
+        if (v < version) {
+          assert forall v' <- old(RightValueSetAt(v)) :: v' > ValueAt(v);
+          assert old(RightValueSetAt(v)) == RightValueSetAt(v);
+        } else {
+          assert RightValueSetAt(v) == {value};
+          assert value > ValueAt(v) by {
+            OrderInvariant(old(valuesVersions), old(ValueSetsVersions), v);
+            InsertLemma(version, old(valuesVersions));
+            assert old(Value()) == old(ValueAt(v));
+            assert value > old(ValueAt(v));
+            assert old(ValueAt(v)) == ValueAt(v);
+          }
+          assert forall v' <- RightValueSetAt(v) :: v' > ValueAt(v);
+        }
+        assert forall v' <- LeftValueSetAt(v) :: v' < ValueAt(v) by {
+          assert forall v' <- old(LeftValueSetAt(v)) :: v' < old(ValueAt(v));
+          assert old(LeftValueSetAt(v)) == LeftValueSetAt(v);
+          assert old(ValueAt(v)) == ValueAt(v);
+        }
+      }
     }
   }
 
   method Insert(version: int, value: int) returns (res: Node?) 
-    modifies if value > Value() then (if Right() != null then Right().Repr else {this}) 
-              else if value < Value() then (if Left() != null then Left().Repr else {this})
-              else {}
+    modifies if value > Value() && Right() != null then 
+               {this} + Right().Repr
+             else if value < Value() && Left() != null then 
+               {this} + Left().Repr
+             else {this}
     decreases Repr
     requires BasicProp() && BinarySearchProp() && ValueSetProp()
     requires version > ValueSetsVersions[|ValueSetsVersions| - 1]
-    ensures res == null <==> unchanged(this)
+    ensures fresh(res)
+    ensures res == null ==> 
+      forall node <- Repr | old(allocated(node)) :: unchanged(node)
     ensures res != null ==> 
       fresh(res) && Repr == old(Repr) + {res} && NewNodeValid(res, version, value)
-    // ensures values == old(values) && valuesVersions == old(valuesVersions)
-    ensures value > old(Value()) ==> 
-              values == old(values)
-              && valuesVersions == old(valuesVersions)
-              && lefts == old(lefts)
-              && leftsVersions == old(leftsVersions)
-              && (forall node <- old(lefts) | node != null :: node in old(Repr) && node.BasicProp() && node.Unchanged())
-              && (forall node <- old(rights) | node != null :: node in old(Repr) && node.BasicProp() && node.Unchanged())
-    // ensures value < old(Value()) ==> rights == old(rights) && rightsVersions == old(rightsVersions)
+    ensures value > old(Value()) && old(Right()) != null ==>
+      forall node <- Repr | node != this && node !in old(Right()).Repr && old(allocated(node)) :: unchanged(node)
     ensures BasicProp() && BinarySearchProp() && ValueSetProp()
-    // ensures Unchanged()
-    // ensures value in ValueSetAt(version) 
+    ensures value in ValueSetAt(version) 
   {
     var x := Value();
     var right := Right();
     var left := Left();
+    ghost var vs := ValueSet();
 
-    assert (forall node <- lefts | node != null :: node.Unchanged());
-
-    // OrderInvariant(old(valuesVersions), old(ValueSetsVersions), version);
-    // assert forall v | v >= version :: ValueAt(v) == x;
-    
     if x > value {
-      // OrderInvariant(old(leftsVersions), old(ValueSetsVersions), version);
-      // assert |leftsVersions| > 0 ==> version >= leftsVersions[0];
-
-      if left == null { 
-        assume false;
-        res := new Node.Init(version, value);
-        lefts := lefts + [res];
-        leftsVersions := leftsVersions + [version];
-        assume false;
-      } else {
-        assume false;
-        OrderInvariant(left.ValueSetsVersions, ValueSetsVersions, version);
-        res := left.Insert(version, value);
-        assume false;
-      }
       assume false;
     } else if x < value {
+      assert left == null || (left.BasicProp() && left.BinarySearchProp() && left.ValueSetProp());
       if right == null {
         res := new Node.Init(version, value);        
         rights := rights + [res];
         rightsVersions := rightsVersions + [version];
 
-        if (res != null) {
-          Repr := Repr + res.Repr;
-          ValueSets := ValueSets + [ValueSet() + {value}];
-          ValueSetsVersions := ValueSetsVersions + [version];
-        }
+        Repr := Repr + res.Repr;
+        ValueSets := ValueSets + [vs + {value}];
+        ValueSetsVersions := ValueSetsVersions + [version];
 
         OrderInvariant(old(rightsVersions), old(ValueSetsVersions), version);
+
+        assert fresh(res);
         assert BasicProp();
-
-        assume (forall node <- lefts | node != null :: node.Unchanged());
-        assume (forall node <- old(rights) | node != null :: node in old(Repr) && node.BasicProp() && node.Unchanged());
-
         InsertRight(res, version, value);
 
       } else {
         assume false;
-        // OrderInvariant(ValueSetsVersions, right.ValueSetsVersions, version);
         OrderInvariant(right.ValueSetsVersions, ValueSetsVersions, version);
         res := right.Insert(version, value);
+
+        // assert forall node <- lefts | node != this && old(allocated(node)) :: unchanged(node.Repr);
         assert rights == old(rights);
         assert rightsVersions == old(rightsVersions);
 
-        Repr := Repr + right.Repr;
         if (res != null) {
-            ValueSets := ValueSets + [old(ValueSet()) + {value}];
-            ValueSetsVersions := ValueSetsVersions + [version];
-        }
+          Repr := Repr + res.Repr;
+          // right.Repr := right.Repr + {value};
+          ValueSets := ValueSets + [vs + {value}];
+          ValueSetsVersions := ValueSetsVersions + [version];
 
-        assume false;
+          assert right.Repr == old(right.Repr) + {res};
+          assert old(BasicProp());
+          assert fresh(res);
+
+          forall r <- rights, l <- lefts | r != null && l != null ensures l != r && l.Repr !! r.Repr {
+            assert l != r;
+            if (r != right) {
+              assert old(l.Repr) !! old(r.Repr);
+              assert res !in l.Repr;
+              assume r.Repr == old(r.Repr) || r.Repr == old(r.Repr) + {res}; 
+              assert l.Repr !! r.Repr;
+            } else {
+              assert l.Repr !! right.Repr;
+            }
+          }
+
+          assume false;
+
+        } 
       }
     } else {
       assume false;
-      // COMMENT: comment out the "assume false" below increases the verification time from 13s to 35s
       res := null;
-      assume false;
     }
-
   }
 }
